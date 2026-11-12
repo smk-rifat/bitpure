@@ -26,6 +26,9 @@ class Backend : public QObject {
     Q_PROPERTY(QVariantList recommendations READ recommendations NOTIFY recommendationsChanged)
     Q_PROPERTY(int activeEqPreset READ activeEqPreset WRITE setActiveEqPreset NOTIFY eqChanged)
     Q_PROPERTY(QVariantList eqGains READ eqGains NOTIFY eqChanged)
+    Q_PROPERTY(QString lyrics READ lyrics NOTIFY lyricsChanged)
+    Q_PROPERTY(QString currentLyricLine READ currentLyricLine NOTIFY currentLyricLineChanged)
+    Q_PROPERTY(QVariantList customEqPresets READ customEqPresets NOTIFY customEqPresetsChanged)
     Q_PROPERTY(QString musicFolder READ musicFolder NOTIFY musicFolderChanged)
     Q_PROPERTY(QString developerName READ developerName CONSTANT)
 
@@ -53,6 +56,10 @@ public:
     QString activeDeviceId() const { return m_activeDeviceId; }
     void setActiveDeviceId(const QString &id);
 
+    QString lyrics() const { return m_lyrics; }
+    QString currentLyricLine() const { return m_currentLyricLine; }
+    QVariantList customEqPresets() const { return m_customEqPresets; }
+
     QString musicFolder() const { return m_musicFolder; }
     QString developerName() const { return "smk"; }
 
@@ -78,6 +85,10 @@ public slots:
     void refreshDevices();
     void fetchRecommendations(const QString &artist);
     void setEqBand(int band, float gainDb);
+    void saveCustomPreset(const QString &name);
+    void deleteCustomPreset(int index);
+    void applyCustomPreset(int index);
+    void fetchLyrics(const QString &artist, const QString &title);
 
 signals:
     void playStateChanged();
@@ -92,6 +103,9 @@ signals:
     void libraryChanged();
     void recommendationsChanged();
     void eqChanged();
+    void customEqPresetsChanged();
+    void lyricsChanged();
+    void currentLyricLineChanged();
     void musicFolderChanged();
     void volumeChanged();
 
@@ -110,6 +124,14 @@ private:
     qint64 m_durationMs = 0;
     int m_activeEqPreset = 0;
     float m_eqGains[10] = {0.0f};
+    QVariantList m_customEqPresets;
+    QString m_lyrics = "No lyrics loaded.";
+    QString m_currentLyricLine = "";
+    QList<QPair<qint64, QString>> m_syncedLyrics;
+    class QNetworkAccessManager *m_netManager = nullptr;
+    void loadCustomPresets();
+    void persistCustomPresets();
+    void updateCurrentLyric(qint64 posMs);
     QString m_musicFolder = "/home/smk/Music_LL";
     QString m_nowPlayingTitle = "Ready";
     QString m_nowPlayingArtist = "Select an album or track";

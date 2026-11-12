@@ -52,7 +52,11 @@ public:
     QStringList availableThemes() const {
         return {
             "everforest", "gruvbox", "tokyo-night", "nord",
-            "catppuccin", "rose-pine", "kanagawa", "matte-black"
+            "catppuccin", "rose-pine", "kanagawa", "matte-black",
+            "hackerman", "retro-82", "lumon", "solitude",
+            "starship", "ristretto", "jade-horse", "miasma",
+            "ethereal", "last-horizon", "catppuccin-latte", "flexoki-light",
+            "lupine", "vantablack", "white"
         };
     }
 

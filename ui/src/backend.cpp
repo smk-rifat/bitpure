@@ -7,6 +7,13 @@
 #include <QTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QDir>
+#include <QRegularExpression>
+#include <QUrl>
+#include <QUrlQuery>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QNetworkReply>
 #include <QDebug>
 
 extern "C" {
@@ -27,8 +34,10 @@ extern "C" {
 }
 
 Backend::Backend(QObject *parent) : QObject(parent) {
+    m_netManager = new QNetworkAccessManager(this);
     audioplayer_init(nullptr);
     initMpv();
+    loadCustomPresets();
     scanFolder(m_musicFolder);
     watchFolder(m_musicFolder);
     refreshDevices();
@@ -100,6 +109,7 @@ void Backend::onMpvSocketReadyRead() {
             if (qAbs(m_positionMs - posMs) > 100) {
                 m_positionMs = posMs;
                 emit positionChanged();
+                updateCurrentLyric(posMs);
             }
         } else if (reqId == 2 && obj.contains("data") && obj["data"].isDouble()) {
             qint64 durMs = (qint64)(obj["data"].toDouble() * 1000.0);
@@ -296,6 +306,8 @@ void Backend::playTrack(const QString &filePath, const QString &title, const QSt
     m_nowPlayingArtist = artist;
     emit trackChanged();
 
+    fetchLyrics(artist, title);
+
     sendMpvCommand(QString("{\"command\": [\"loadfile\", \"%1\"]}\n").arg(filePath));
     sendMpvCommand("{\"command\": [\"set_property\", \"pause\", false]}\n");
     m_isPlaying = true;
@@ -382,4 +394,172 @@ void Backend::setSortCriteria(int sortIndex) {
         }
     }
     emit libraryChanged();
+}
+
+void Backend::loadCustomPresets() {
+    m_customEqPresets.clear();
+    QString path = QDir::homePath() + "/.config/bitpure/custom_eq.json";
+    QFile f(path);
+    if (f.open(QIODevice::ReadOnly)) {
+        QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        if (doc.isArray()) {
+            for (const auto &v : doc.array()) {
+                m_customEqPresets.append(v.toObject().toVariantMap());
+            }
+        }
+    }
+    emit customEqPresetsChanged();
+}
+
+void Backend::persistCustomPresets() {
+    QString dir = QDir::homePath() + "/.config/bitpure";
+    QDir().mkpath(dir);
+    QFile f(dir + "/custom_eq.json");
+    if (f.open(QIODevice::WriteOnly)) {
+        QJsonArray arr;
+        for (const auto &v : m_customEqPresets) {
+            arr.append(QJsonObject::fromVariantMap(v.toMap()));
+        }
+        f.write(QJsonDocument(arr).toJson());
+    }
+}
+
+void Backend::saveCustomPreset(const QString &name) {
+    QString cleanName = name.trimmed();
+    if (cleanName.isEmpty()) cleanName = "Custom Preset";
+
+    QVariantList gains;
+    for (int i = 0; i < 10; ++i) {
+        gains.append(m_eqGains[i]);
+    }
+
+    QVariantMap map;
+    map["name"] = cleanName;
+    map["gains"] = gains;
+
+    // Replace if exists, else append
+    bool found = false;
+    for (int i = 0; i < m_customEqPresets.size(); ++i) {
+        if (m_customEqPresets[i].toMap()["name"].toString() == cleanName) {
+            m_customEqPresets[i] = map;
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        m_customEqPresets.append(map);
+    }
+
+    persistCustomPresets();
+    emit customEqPresetsChanged();
+}
+
+void Backend::deleteCustomPreset(int index) {
+    if (index >= 0 && index < m_customEqPresets.size()) {
+        m_customEqPresets.removeAt(index);
+        persistCustomPresets();
+        emit customEqPresetsChanged();
+    }
+}
+
+void Backend::applyCustomPreset(int index) {
+    if (index >= 0 && index < m_customEqPresets.size()) {
+        QVariantMap map = m_customEqPresets[index].toMap();
+        QVariantList gains = map["gains"].toList();
+        for (int i = 0; i < 10 && i < gains.size(); ++i) {
+            float g = gains[i].toFloat();
+            m_eqGains[i] = g;
+            audioplayer_set_eq_band(i, g);
+        }
+        m_activeEqPreset = -1; // custom
+        emit eqChanged();
+    }
+}
+
+void Backend::fetchLyrics(const QString &artist, const QString &title) {
+    m_syncedLyrics.clear();
+    m_currentLyricLine = "";
+    emit currentLyricLineChanged();
+
+    QString cleanArtist = artist.split(',').first().split('&').first().trimmed();
+    QString cleanTitle = title;
+    int paren = cleanTitle.indexOf('(');
+    if (paren > 0) cleanTitle = cleanTitle.left(paren).trimmed();
+    int dash = cleanTitle.indexOf('-');
+    if (dash > 0) cleanTitle = cleanTitle.left(dash).trimmed();
+
+    m_lyrics = QString("Searching lyrics for %1 — %2...").arg(cleanArtist, cleanTitle);
+    emit lyricsChanged();
+
+    QUrl url("https://lrclib.net/api/get");
+    QUrlQuery query;
+    query.addQueryItem("artist_name", cleanArtist);
+    query.addQueryItem("track_name", cleanTitle);
+    url.setQuery(query);
+
+    QNetworkRequest request(url);
+    request.setHeader(QNetworkRequest::UserAgentHeader, "BitPure/1.0 (https://github.com/smk-rifat/bitpure)");
+
+    QNetworkReply *reply = m_netManager->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, cleanTitle]() {
+        reply->deleteLater();
+        if (reply->error() == QNetworkReply::NoError) {
+            QByteArray data = reply->readAll();
+            QJsonDocument doc = QJsonDocument::fromJson(data);
+            if (doc.isObject()) {
+                QJsonObject obj = doc.object();
+                QString synced = obj.value("syncedLyrics").toString();
+                QString plain = obj.value("plainLyrics").toString();
+
+                if (!synced.isEmpty()) {
+                    m_syncedLyrics.clear();
+                    QStringList lines = synced.split('\n');
+                    static QRegularExpression re("\\[(\\d+):(\\d+(?:\\.\\d+)?)\\](.*)");
+                    for (const QString &line : lines) {
+                        QRegularExpressionMatch match = re.match(line.trimmed());
+                        if (match.hasMatch()) {
+                            qint64 min = match.captured(1).toLongLong();
+                            double sec = match.captured(2).toDouble();
+                            qint64 totalMs = (min * 60 * 1000) + (qint64)(sec * 1000.0);
+                            QString text = match.captured(3).trimmed();
+                            if (!text.isEmpty()) {
+                                m_syncedLyrics.append(qMakePair(totalMs, text));
+                            }
+                        }
+                    }
+                    m_lyrics = synced;
+                    emit lyricsChanged();
+                    updateCurrentLyric(m_positionMs);
+                    return;
+                } else if (!plain.isEmpty()) {
+                    m_lyrics = plain;
+                    m_currentLyricLine = plain.split('\n').first();
+                    emit lyricsChanged();
+                    emit currentLyricLineChanged();
+                    return;
+                }
+            }
+        }
+        m_lyrics = QString("No synced lyrics found for \"%1\".").arg(cleanTitle);
+        m_currentLyricLine = "";
+        emit lyricsChanged();
+        emit currentLyricLineChanged();
+    });
+}
+
+void Backend::updateCurrentLyric(qint64 posMs) {
+    if (m_syncedLyrics.isEmpty()) return;
+
+    QString found = "";
+    for (int i = 0; i < m_syncedLyrics.size(); ++i) {
+        if (m_syncedLyrics[i].first <= posMs) {
+            found = m_syncedLyrics[i].second;
+        } else {
+            break;
+        }
+    }
+    if (!found.isEmpty() && found != m_currentLyricLine) {
+        m_currentLyricLine = found;
+        emit currentLyricLineChanged();
+    }
 }

@@ -491,14 +491,14 @@ ApplicationWindow {
                         }
                     }
 
-                    // SECTION HEADER: ── Lyrics & Signal Path ──
+                    // ── Lyrics ───────────────────────────────────────
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 4
 
                         Rectangle { Layout.fillWidth: true; height: 1; color: localTheme.border }
                         Text {
-                            text: "── Hardware & Signal Chain ──"
+                            text: "── Lyrics ──"
                             color: localTheme.muted
                             font.pixelSize: 10
                             font.family: "monospace"
@@ -506,144 +506,87 @@ ApplicationWindow {
                         Rectangle { Layout.fillWidth: true; height: 1; color: localTheme.border }
                     }
 
-                    // TELEMETRY & SIGNAL PATH READOUT
-                    ScrollView {
+                    // Current lyric banner
+                    Rectangle {
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
+                        Layout.preferredHeight: 30
+                        color: "transparent"
+                        border.color: localTheme.accent
+                        border.width: localBackend.currentLyricLine !== "" ? 1 : 0
+                        radius: 2
+                        visible: localBackend.currentLyricLine !== ""
 
-                        ColumnLayout {
-                            width: parent.width
-                            spacing: 8
-
-                            // Mode Badge
-                            Rectangle {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 32
-                                color: localBackend.isBitPerfect ? "#212b26" : localTheme.darkBackground
-                                border.color: localBackend.isBitPerfect ? localTheme.green : localTheme.border
-                                border.width: 1
-                                radius: localTheme.radius
-
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 8
-                                    spacing: 6
-                                    Text {
-                                        text: localBackend.isBitPerfect ? "● PURE BIT-PERFECT DIRECT" : "○ AUDITED DSP MODE"
-                                        color: localBackend.isBitPerfect ? localTheme.green : localTheme.yellow
-                                        font.bold: true
-                                        font.pixelSize: 10
-                                        font.family: "monospace"
-                                    }
-                                }
-                            }
-
-                            // Device info
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            spacing: 5
                             Text {
-                                text: "HARDWARE ENDPOINT:"
-                                color: localTheme.muted
-                                font.bold: true
-                                font.pixelSize: 9
-                                font.family: "monospace"
-                            }
-                            Text {
-                                text: localBackend.activeDeviceId
+                                text: "♪"
                                 color: localTheme.accent
-                                font.pixelSize: 10
+                                font.pixelSize: 11
                                 font.family: "monospace"
-                                elide: Text.ElideRight
                             }
-
-                            // Signal Info
                             Text {
-                                text: "SIGNAL PATH STATUS:"
-                                color: localTheme.muted
+                                Layout.fillWidth: true
+                                text: localBackend.currentLyricLine
+                                color: localTheme.foreground
                                 font.bold: true
-                                font.pixelSize: 9
-                                font.family: "monospace"
-                            }
-                            Text {
-                                text: localBackend.signalPathInfo
-                                color: localBackend.isBitPerfect ? localTheme.green : localTheme.yellow
                                 font.pixelSize: 10
                                 font.family: "monospace"
                                 wrapMode: Text.Wrap
                             }
+                        }
+                    }
 
-                            // High-Res Specs
+                    // Full lyrics scroll
+                    ScrollView {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                        Text {
+                            width: parent.width
+                            text: localBackend.lyrics !== "" ? localBackend.lyrics : "(no lyrics)"
+                            color: localBackend.lyrics !== "" ? localTheme.muted : localTheme.border
+                            font.pixelSize: 10
+                            font.family: "monospace"
+                            wrapMode: Text.Wrap
+                            lineHeight: 1.5
+                        }
+                    }
+
+                    // Format badge at bottom
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 24
+                        color: localTheme.darkBackground
+                        border.color: localTheme.border
+                        border.width: 1
+                        radius: 2
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.margins: 6
+                            spacing: 6
                             Text {
-                                text: "STREAM SPECIFICATION:"
-                                color: localTheme.muted
-                                font.bold: true
+                                text: localBackend.formatBadge
+                                color: localBackend.isBitPerfect ? localTheme.green : localTheme.yellow
                                 font.pixelSize: 9
                                 font.family: "monospace"
                             }
-                            Rectangle {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 46
-                                color: localTheme.darkBackground
-                                border.color: localTheme.border
-                                border.width: 1
-                                radius: localTheme.radius
-
-                                ColumnLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 6
-                                    spacing: 2
-                                    Text {
-                                        text: localBackend.formatBadge
-                                        color: localTheme.foreground
-                                        font.bold: true
-                                        font.pixelSize: 10
-                                        font.family: "monospace"
-                                    }
-                                    Text {
-                                        text: "Bitstream: Uncompressed PCM / ALSA Direct"
-                                        color: localTheme.muted
-                                        font.pixelSize: 9
-                                        font.family: "monospace"
-                                    }
-                                }
-                            }
-
-                            // EQ Status Note
-                            Rectangle {
-                                Layout.fillWidth: true
-                                Layout.preferredHeight: 32
-                                color: "transparent"
-                                border.color: localTheme.border
-                                border.width: 1
-                                radius: localTheme.radius
-
-                                RowLayout {
-                                    anchors.fill: parent
-                                    anchors.margins: 6
-                                    spacing: 6
-                                    Text {
-                                        text: "🎚️"
-                                        font.pixelSize: 11
-                                    }
-                                    Text {
-                                        text: localBackend.isBitPerfect ? "EQ Bypassed (Settings > EQ)" : "DSP Active (Settings > EQ)"
-                                        color: localTheme.muted
-                                        font.pixelSize: 9
-                                        font.family: "monospace"
-                                    }
-                                }
-
-                                MouseArea {
-                                    anchors.fill: parent
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: currentTab = "settings"
-                                }
+                            Item { Layout.fillWidth: true }
+                            Text {
+                                text: localBackend.isBitPerfect ? "PURE" : "DSP"
+                                color: localBackend.isBitPerfect ? localTheme.green : localTheme.yellow
+                                font.pixelSize: 9
+                                font.family: "monospace"
                             }
                         }
                     }
                 }
             }
 
-            // -----------------------------------------------------------------
             // RIGHT PANE: Track Table / Album Grid / Settings
             // -----------------------------------------------------------------
             Rectangle {
@@ -865,53 +808,41 @@ ApplicationWindow {
                     }
                 }
 
-                // C. SETTINGS VIEW (Omarchy Distro Grade Configuration Suite)
+                // C. SETTINGS VIEW — clean minimal Omarchy aesthetic
                 ScrollView {
                     anchors.fill: parent
-                    anchors.margins: 18
+                    anchors.margins: 14
                     visible: currentTab === "settings"
                     clip: true
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
                     ColumnLayout {
-                        width: parent.width - 24
-                        spacing: 16
+                        width: parent.width - 12
+                        spacing: 12
 
-                        // Header Bar
+                        // ── Header Bar ──────────────────────────────────────────
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 12
-
-                            ColumnLayout {
-                                spacing: 3
-                                Text {
-                                    text: "SYSTEM & AUDIO ARCHITECTURE CONFIGURATION"
-                                    color: localTheme.foreground
-                                    font.bold: true
-                                    font.pixelSize: 13
-                                    font.family: "monospace"
-                                }
-                                Text {
-                                    text: "Audiophile bit-perfect signal path, hardware DSP faders, library scanner & Omarchy desktop integration"
-                                    color: localTheme.muted
-                                    font.pixelSize: 10
-                                    font.family: "monospace"
-                                }
+                            spacing: 8
+                            Text {
+                                text: "Settings"
+                                color: localTheme.foreground
+                                font.bold: true
+                                font.pixelSize: 13
+                                font.family: "monospace"
                             }
-
                             Item { Layout.fillWidth: true }
-
                             Rectangle {
-                                Layout.preferredHeight: 22
-                                Layout.preferredWidth: archBadge.implicitWidth + 14
-                                radius: localTheme.radius
+                                Layout.preferredHeight: 20
+                                Layout.preferredWidth: vBadge.implicitWidth + 14
                                 color: localTheme.darkBackground
                                 border.color: localTheme.border
                                 border.width: 1
-
+                                radius: 2
                                 Text {
-                                    id: archBadge
+                                    id: vBadge
                                     anchors.centerIn: parent
-                                    text: "BitPure v1.0.0 — Arch Linux / Wayland"
+                                    text: "BitPure v1.0 — Wayland"
                                     color: localTheme.accent
                                     font.pixelSize: 9
                                     font.family: "monospace"
@@ -919,681 +850,468 @@ ApplicationWindow {
                             }
                         }
 
-                        // =====================================================
-                        // SECTION 1: 10-BAND GRAPHIC EQUALIZER & DSP
-                        // =====================================================
+                        // ── SECTION: Theme ───────────────────────────────────
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: eqCol.implicitHeight + 24
+                            implicitHeight: themeCol.implicitHeight + 24
                             color: localTheme.surface
                             border.color: localTheme.border
                             border.width: 1
-                            radius: localTheme.radius
+                            radius: 2
 
                             ColumnLayout {
-                                id: eqCol
+                                id: themeCol
                                 anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 12
+                                anchors.margins: 12
+                                spacing: 10
 
-                                // Section Title & State Badge
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    spacing: 8
-
                                     Text {
-                                        text: "[ 01 // 10-BAND GRAPHIC EQUALIZER & DSP ]"
+                                        text: "Theme"
                                         color: localTheme.accent
                                         font.bold: true
                                         font.pixelSize: 11
                                         font.family: "monospace"
                                     }
-
                                     Item { Layout.fillWidth: true }
+                                    Text {
+                                        text: localTheme.currentTheme
+                                        color: localTheme.muted
+                                        font.pixelSize: 9
+                                        font.family: "monospace"
+                                    }
+                                }
 
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+
+                                    Text {
+                                        text: "Omarchy Palette:"
+                                        color: localTheme.foreground
+                                        font.pixelSize: 10
+                                        font.family: "monospace"
+                                    }
+
+                                    ComboBox {
+                                        id: themeCombo
+                                        Layout.preferredWidth: 200
+                                        Layout.preferredHeight: 26
+                                        model: localTheme.availableThemes
+                                        currentIndex: Math.max(0, localTheme.availableThemes.indexOf(localTheme.currentTheme))
+                                        onActivated: function(index) {
+                                            localTheme.setTheme(model[index]);
+                                        }
+
+                                        background: Rectangle {
+                                            color: localTheme.darkBackground
+                                            border.color: localTheme.border
+                                            border.width: 1
+                                            radius: 2
+                                        }
+
+                                        contentItem: Text {
+                                            leftPadding: 8
+                                            rightPadding: 20
+                                            text: themeCombo.displayText
+                                            color: localTheme.accent
+                                            font.bold: true
+                                            font.pixelSize: 10
+                                            font.family: "monospace"
+                                            verticalAlignment: Text.AlignVCenter
+                                            elide: Text.ElideRight
+                                        }
+
+                                        popup: Popup {
+                                            y: themeCombo.height + 2
+                                            width: themeCombo.width
+                                            implicitHeight: Math.min(contentItem.implicitHeight, 240)
+                                            padding: 2
+                                            contentItem: ListView {
+                                                clip: true
+                                                implicitHeight: contentHeight
+                                                model: themeCombo.popup.visible ? themeCombo.delegateModel : null
+                                                currentIndex: themeCombo.highlightedIndex
+                                                ScrollIndicator.vertical: ScrollIndicator { }
+                                            }
+                                            background: Rectangle {
+                                                color: localTheme.darkBackground
+                                                border.color: localTheme.border
+                                                border.width: 1
+                                                radius: 2
+                                            }
+                                        }
+
+                                        delegate: ItemDelegate {
+                                            width: themeCombo.width - 4
+                                            height: 24
+                                            contentItem: Text {
+                                                text: modelData
+                                                color: highlighted ? localTheme.accent : localTheme.foreground
+                                                font.pixelSize: 10
+                                                font.family: "monospace"
+                                                verticalAlignment: Text.AlignVCenter
+                                            }
+                                            background: Rectangle {
+                                                color: highlighted ? localTheme.surface : "transparent"
+                                                radius: 2
+                                            }
+                                            highlighted: themeCombo.highlightedIndex === index
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── SECTION: Equalizer ───────────────────────────────
+                        Rectangle {
+                            Layout.fillWidth: true
+                            implicitHeight: eqSec.implicitHeight + 24
+                            color: localTheme.surface
+                            border.color: localTheme.border
+                            border.width: 1
+                            radius: 2
+
+                            ColumnLayout {
+                                id: eqSec
+                                anchors.fill: parent
+                                anchors.margins: 12
+                                spacing: 10
+
+                                // title row
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text {
+                                        text: "Equalizer"
+                                        color: localTheme.accent
+                                        font.bold: true
+                                        font.pixelSize: 11
+                                        font.family: "monospace"
+                                    }
+                                    Item { Layout.fillWidth: true }
                                     Rectangle {
                                         Layout.preferredHeight: 20
-                                        Layout.preferredWidth: eqStatusBadge.implicitWidth + 12
-                                        radius: localTheme.radius
-                                        color: localBackend.isBitPerfect ? "#212b26" : "#2d281e"
+                                        Layout.preferredWidth: eqStatText.implicitWidth + 12
+                                        color: localTheme.darkBackground
                                         border.color: localBackend.isBitPerfect ? localTheme.green : localTheme.yellow
                                         border.width: 1
-
+                                        radius: 2
                                         Text {
-                                            id: eqStatusBadge
+                                            id: eqStatText
                                             anchors.centerIn: parent
-                                            text: localBackend.isBitPerfect ? "● BYPASSED (PURE 0dB DIRECT)" : "○ DSP ACTIVE (10 BIQUAD FILTERS)"
+                                            text: localBackend.isBitPerfect ? "Bit-Perfect (bypass)" : "DSP Active"
                                             color: localBackend.isBitPerfect ? localTheme.green : localTheme.yellow
-                                            font.bold: true
                                             font.pixelSize: 9
                                             font.family: "monospace"
                                         }
                                     }
                                 }
 
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: "Direct hardware passthrough (Pure 0dB) bypasses DSP for zero digital distortion. Selecting a preset or adjusting faders automatically switches to Audited DSP Mode."
-                                    color: localTheme.muted
-                                    font.pixelSize: 10
-                                    font.family: "monospace"
-                                    wrapMode: Text.Wrap
-                                }
-
-                                // Presets Bar
+                                // Preset pills
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: 6
 
-                                    Text {
-                                        text: "PRESETS:"
-                                        color: localTheme.foreground
-                                        font.bold: true
-                                        font.pixelSize: 10
-                                        font.family: "monospace"
-                                    }
+                                    property var presets: ["Flat","Balanced","Bass Boost","Warm Vocal","Treble Clean"]
 
                                     Repeater {
-                                        model: [
-                                            { id: 0, label: "Flat (0.0 dB)" },
-                                            { id: 1, label: "Balanced" },
-                                            { id: 2, label: "Bass Boost" },
-                                            { id: 3, label: "Warm Vocal" },
-                                            { id: 4, label: "Treble Clean" }
-                                        ]
-
-                                        Rectangle {
-                                            Layout.preferredHeight: 24
-                                            Layout.preferredWidth: pText.implicitWidth + 16
-                                            radius: localTheme.radius
-                                            color: localBackend.activeEqPreset === modelData.id ? localTheme.accent : (pMouse.containsMouse ? localTheme.surfaceLighter : localTheme.darkBackground)
-                                            border.color: localBackend.activeEqPreset === modelData.id ? localTheme.accent : localTheme.border
+                                        model: parent.presets
+                                        delegate: Rectangle {
+                                            property bool isActive: localBackend.activeEqPreset === modelData
+                                            Layout.preferredWidth: pLabel.implicitWidth + 16
+                                            Layout.preferredHeight: 22
+                                            color: isActive ? localTheme.accent : localTheme.darkBackground
+                                            border.color: isActive ? localTheme.accent : localTheme.border
                                             border.width: 1
-
+                                            radius: 2
                                             Text {
-                                                id: pText
+                                                id: pLabel
                                                 anchors.centerIn: parent
-                                                text: modelData.label
-                                                color: localBackend.activeEqPreset === modelData.id ? localTheme.darkBackground : localTheme.foreground
-                                                font.bold: localBackend.activeEqPreset === modelData.id
-                                                font.pixelSize: 10
+                                                text: modelData
+                                                color: isActive ? localTheme.background : localTheme.foreground
+                                                font.pixelSize: 9
                                                 font.family: "monospace"
                                             }
-
                                             MouseArea {
-                                                id: pMouse
                                                 anchors.fill: parent
-                                                hoverEnabled: true
                                                 cursorShape: Qt.PointingHandCursor
-                                                onClicked: {
-                                                    if (localBackend.isBitPerfect) {
-                                                        localBackend.isBitPerfect = false;
-                                                    }
-                                                    localBackend.activeEqPreset = modelData.id;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    Item { Layout.fillWidth: true }
-
-                                    // Reset Button
-                                    Rectangle {
-                                        Layout.preferredHeight: 24
-                                        Layout.preferredWidth: rText.implicitWidth + 14
-                                        radius: localTheme.radius
-                                        color: "transparent"
-                                        border.color: localTheme.border
-                                        border.width: 1
-
-                                        Text {
-                                            id: rText
-                                            anchors.centerIn: parent
-                                            text: "↺ Reset Flat"
-                                            color: rMouse.containsMouse ? localTheme.foreground : localTheme.muted
-                                            font.pixelSize: 10
-                                            font.family: "monospace"
-                                        }
-
-                                        MouseArea {
-                                            id: rMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: {
-                                                if (localBackend.isBitPerfect) {
-                                                    localBackend.isBitPerfect = false;
-                                                }
-                                                localBackend.activeEqPreset = 0;
+                                                onClicked: localBackend.setActiveEqPreset(modelData)
                                             }
                                         }
                                     }
                                 }
 
-                                // 10-Band Graphic Visual Faders
-                                Rectangle {
+                                // 10-band fader rack
+                                RowLayout {
                                     Layout.fillWidth: true
-                                    Layout.preferredHeight: 140
-                                    color: localTheme.darkBackground
-                                    border.color: localTheme.border
-                                    border.width: 1
-                                    radius: localTheme.radius
+                                    spacing: 4
 
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 12
-                                        spacing: 8
+                                    Repeater {
+                                        model: 10
+                                        delegate: ColumnLayout {
+                                            spacing: 2
+                                            Layout.fillWidth: true
 
-                                        Repeater {
-                                            model: [
-                                                { band: 0, freq: "31 Hz" },
-                                                { band: 1, freq: "62 Hz" },
-                                                { band: 2, freq: "125 Hz" },
-                                                { band: 3, freq: "250 Hz" },
-                                                { band: 4, freq: "500 Hz" },
-                                                { band: 5, freq: "1 kHz" },
-                                                { band: 6, freq: "2 kHz" },
-                                                { band: 7, freq: "4 kHz" },
-                                                { band: 8, freq: "8 kHz" },
-                                                { band: 9, freq: "16 kHz" }
-                                            ]
-
-                                            ColumnLayout {
-                                                Layout.fillWidth: true
-                                                Layout.fillHeight: true
-                                                spacing: 4
-
-                                                property real bandGain: (localBackend.eqGains.length > modelData.band) ? Number(localBackend.eqGains[modelData.band]) : 0.0
-
-                                                // Gain Readout
-                                                Text {
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    text: (bandGain > 0 ? "+" : "") + bandGain.toFixed(1)
-                                                    color: Math.abs(bandGain) > 0.01 ? localTheme.accent : localTheme.muted
-                                                    font.bold: Math.abs(bandGain) > 0.01
-                                                    font.pixelSize: 9
-                                                    font.family: "monospace"
+                                            Text {
+                                                Layout.alignment: Qt.AlignHCenter
+                                                text: {
+                                                    var v = localBackend.eqGains && localBackend.eqGains[index] !== undefined
+                                                        ? localBackend.eqGains[index].toFixed(1) : "0.0";
+                                                    return v;
                                                 }
+                                                color: {
+                                                    var v = localBackend.eqGains && localBackend.eqGains[index] !== undefined
+                                                        ? localBackend.eqGains[index] : 0;
+                                                    return v > 0 ? localTheme.green : (v < 0 ? localTheme.red : localTheme.muted);
+                                                }
+                                                font.pixelSize: 8
+                                                font.family: "monospace"
+                                            }
 
-                                                // Vertical Track & Knob
-                                                Item {
-                                                    id: faderTrack
-                                                    Layout.fillWidth: true
-                                                    Layout.fillHeight: true
+                                            Slider {
+                                                id: faderSlider
+                                                Layout.alignment: Qt.AlignHCenter
+                                                orientation: Qt.Vertical
+                                                Layout.preferredHeight: 85
+                                                Layout.preferredWidth: 16
+                                                from: -12
+                                                to: 12
+                                                value: localBackend.eqGains && localBackend.eqGains[index] !== undefined
+                                                       ? localBackend.eqGains[index] : 0
+                                                stepSize: 0.5
 
-                                                    // Center 0 dB zero line
+                                                background: Rectangle {
+                                                    x: faderSlider.leftPadding + faderSlider.availableWidth / 2 - width / 2
+                                                    y: faderSlider.topPadding
+                                                    width: 2
+                                                    height: faderSlider.availableHeight
+                                                    color: localTheme.border
                                                     Rectangle {
-                                                        anchors.verticalCenter: parent.verticalCenter
                                                         width: parent.width
-                                                        height: 1
-                                                        color: localTheme.border
-                                                    }
-
-                                                    // Vertical Center Slot
-                                                    Rectangle {
-                                                        anchors.horizontalCenter: parent.horizontalCenter
-                                                        width: 3
-                                                        height: parent.height
-                                                        radius: 1
-                                                        color: localTheme.surface
-
-                                                        // Active Fill from Center
-                                                        Rectangle {
-                                                            anchors.horizontalCenter: parent.horizontalCenter
-                                                            y: bandGain >= 0 ? parent.height / 2 - (bandGain / 12.0) * (parent.height / 2) : parent.height / 2
-                                                            height: Math.abs(bandGain / 12.0) * (parent.height / 2)
-                                                            width: 3
-                                                            color: localTheme.accent
-                                                        }
-                                                    }
-
-                                                    // Draggable Knob
-                                                    Rectangle {
-                                                        anchors.horizontalCenter: parent.horizontalCenter
-                                                        y: Math.max(0, Math.min(parent.height - 12, (parent.height / 2) - ((bandGain / 12.0) * (parent.height / 2)) - 6))
-                                                        width: 16
-                                                        height: 12
-                                                        radius: 2
-                                                        color: faderMouse.containsMouse ? localTheme.accent : localTheme.surfaceLighter
-                                                        border.color: localTheme.accent
-                                                        border.width: 1
-
-                                                        Rectangle {
-                                                            anchors.centerIn: parent
-                                                            width: 8
-                                                            height: 1
-                                                            color: faderMouse.containsMouse ? localTheme.darkBackground : localTheme.foreground
-                                                        }
-                                                    }
-
-                                                    MouseArea {
-                                                        id: faderMouse
-                                                        anchors.fill: parent
-                                                        hoverEnabled: true
-                                                        cursorShape: Qt.PointingHandCursor
-                                                        onClicked: (mouse) => {
-                                                            if (localBackend.isBitPerfect) localBackend.isBitPerfect = false;
-                                                            var normalized = 1.0 - (mouse.y / height); // 0.0 at bottom, 1.0 at top
-                                                            var db = (normalized * 24.0) - 12.0;
-                                                            localBackend.setEqBand(modelData.band, Math.max(-12.0, Math.min(12.0, db)));
-                                                        }
-                                                        onPositionChanged: (mouse) => {
-                                                            if (pressed) {
-                                                                if (localBackend.isBitPerfect) localBackend.isBitPerfect = false;
-                                                                var normalized = 1.0 - (mouse.y / height);
-                                                                var db = (normalized * 24.0) - 12.0;
-                                                                localBackend.setEqBand(modelData.band, Math.max(-12.0, Math.min(12.0, db)));
-                                                            }
-                                                        }
-                                                        onWheel: (wheel) => {
-                                                            if (localBackend.isBitPerfect) localBackend.isBitPerfect = false;
-                                                            var step = (wheel.angleDelta.y > 0 ? 0.5 : -0.5);
-                                                            localBackend.setEqBand(modelData.band, Math.max(-12.0, Math.min(12.0, bandGain + step)));
-                                                        }
+                                                        height: faderSlider.visualPosition * parent.height
+                                                        color: localTheme.accent
+                                                        opacity: 0.5
                                                     }
                                                 }
+                                                handle: Rectangle {
+                                                    x: faderSlider.leftPadding + faderSlider.availableWidth / 2 - width / 2
+                                                    y: faderSlider.topPadding + faderSlider.visualPosition * faderSlider.availableHeight - height / 2
+                                                    width: 12
+                                                    height: 4
+                                                    color: localTheme.accent
+                                                    radius: 1
+                                                }
 
-                                                // Frequency Label
-                                                Text {
-                                                    Layout.alignment: Qt.AlignHCenter
-                                                    text: modelData.freq
-                                                    color: localTheme.foreground
-                                                    font.pixelSize: 9
-                                                    font.family: "monospace"
+                                                onMoved: localBackend.setEqBand(index, value)
+                                            }
+
+                                            Text {
+                                                Layout.alignment: Qt.AlignHCenter
+                                                text: {
+                                                    var labels = ["31","62","125","250","500","1k","2k","4k","8k","16k"];
+                                                    return labels[index] || "";
+                                                }
+                                                color: localTheme.muted
+                                                font.pixelSize: 8
+                                                font.family: "monospace"
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Custom preset save row
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 6
+
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.preferredHeight: 24
+                                        color: localTheme.darkBackground
+                                        border.color: localTheme.border
+                                        border.width: 1
+                                        radius: 2
+
+                                        TextInput {
+                                            id: presetNameInput
+                                            anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; leftMargin: 8; rightMargin: 8 }
+                                            color: localTheme.foreground
+                                            font.pixelSize: 10
+                                            font.family: "monospace"
+                                        }
+                                        Text {
+                                            anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: 8 }
+                                            text: "Save current gains as preset name…"
+                                            color: localTheme.muted
+                                            font.pixelSize: 9
+                                            font.family: "monospace"
+                                            visible: presetNameInput.text === ""
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.preferredWidth: 50
+                                        Layout.preferredHeight: 24
+                                        color: localTheme.darkBackground
+                                        border.color: localTheme.accent
+                                        border.width: 1
+                                        radius: 2
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "Save"
+                                            color: localTheme.accent
+                                            font.pixelSize: 10
+                                            font.family: "monospace"
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                if (presetNameInput.text.trim() !== "") {
+                                                    localBackend.saveCustomPreset(presetNameInput.text.trim());
+                                                    presetNameInput.text = "";
                                                 }
                                             }
+                                        }
+                                    }
+                                }
+
+                                // Custom preset list
+                                Repeater {
+                                    model: localBackend.customEqPresets
+                                    delegate: RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: modelData.name || modelData
+                                            color: localTheme.foreground
+                                            font.pixelSize: 10
+                                            font.family: "monospace"
+                                            elide: Text.ElideRight
+                                        }
+                                        Rectangle {
+                                            Layout.preferredWidth: 44
+                                            Layout.preferredHeight: 20
+                                            color: localTheme.darkBackground
+                                            border.color: localTheme.green
+                                            border.width: 1
+                                            radius: 2
+                                            Text { anchors.centerIn: parent; text: "Apply"; color: localTheme.green; font.pixelSize: 9; font.family: "monospace" }
+                                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: localBackend.applyCustomPreset(index) }
+                                        }
+                                        Rectangle {
+                                            Layout.preferredWidth: 36
+                                            Layout.preferredHeight: 20
+                                            color: localTheme.darkBackground
+                                            border.color: localTheme.red
+                                            border.width: 1
+                                            radius: 2
+                                            Text { anchors.centerIn: parent; text: "Del"; color: localTheme.red; font.pixelSize: 9; font.family: "monospace" }
+                                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: localBackend.deleteCustomPreset(index) }
                                         }
                                     }
                                 }
                             }
                         }
 
-                        // =====================================================
-                        // SECTION 2: AUDIO HARDWARE ROUTING & PURE MODE
-                        // =====================================================
+                        // ── SECTION: Library ─────────────────────────────────
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: devCol.implicitHeight + 24
+                            implicitHeight: libCol.implicitHeight + 24
                             color: localTheme.surface
                             border.color: localTheme.border
                             border.width: 1
-                            radius: localTheme.radius
+                            radius: 2
 
                             ColumnLayout {
-                                id: devCol
+                                id: libCol
                                 anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 10
+                                anchors.margins: 12
+                                spacing: 8
 
                                 RowLayout {
                                     Layout.fillWidth: true
                                     Text {
-                                        text: "[ 02 // AUDIO HARDWARE ENDPOINTS & PURE MODE ]"
+                                        text: "Library"
                                         color: localTheme.accent
                                         font.bold: true
                                         font.pixelSize: 11
                                         font.family: "monospace"
                                     }
                                     Item { Layout.fillWidth: true }
-                                }
-
-                                // Bit-Perfect Pure Mode Card
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    Layout.preferredHeight: 38
-                                    radius: localTheme.radius
-                                    color: localBackend.isBitPerfect ? "#212b26" : localTheme.darkBackground
-                                    border.color: localBackend.isBitPerfect ? localTheme.green : localTheme.border
-                                    border.width: 1
-
-                                    RowLayout {
-                                        anchors.fill: parent
-                                        anchors.margins: 10
-                                        spacing: 10
-
-                                        Text {
-                                            text: localBackend.isBitPerfect ? "🔒 PURE BIT-PERFECT LINE-OUT (0 dB DIRECT)" : "🔓 SOFTWARE DSP AUDIO PATH ACTIVE"
-                                            color: localBackend.isBitPerfect ? localTheme.green : localTheme.yellow
-                                            font.bold: true
-                                            font.pixelSize: 11
-                                            font.family: "monospace"
-                                        }
-
-                                        Item { Layout.fillWidth: true }
-
-                                        Text {
-                                            text: localBackend.isBitPerfect ? "Bypasses all mixers & DSP" : "Volume & EQ enabled"
-                                            color: localTheme.muted
-                                            font.pixelSize: 10
-                                            font.family: "monospace"
-                                        }
-
-                                        Rectangle {
-                                            Layout.preferredHeight: 22
-                                            Layout.preferredWidth: 70
-                                            radius: localTheme.radius
-                                            color: localBackend.isBitPerfect ? localTheme.green : localTheme.surfaceLighter
-
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: localBackend.isBitPerfect ? "Active" : "Enable"
-                                                color: localBackend.isBitPerfect ? localTheme.darkBackground : localTheme.foreground
-                                                font.bold: true
-                                                font.pixelSize: 10
-                                                font.family: "monospace"
-                                            }
-                                        }
+                                    Text {
+                                        text: localBackend.tracks.length + " tracks"
+                                        color: localTheme.muted
+                                        font.pixelSize: 9
+                                        font.family: "monospace"
                                     }
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: localBackend.isBitPerfect = !localBackend.isBitPerfect
-                                    }
-                                }
-
-                                // Detected Devices
-                                Text {
-                                    text: "DETECTED HARDWARE OUTPUTS:"
-                                    color: localTheme.muted
-                                    font.bold: true
-                                    font.pixelSize: 9
-                                    font.family: "monospace"
-                                }
-
-                                Repeater {
-                                    model: localBackend.devices
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 36
-                                        color: localBackend.activeDeviceId === modelData.id ? localTheme.selection : localTheme.darkBackground
-                                        border.color: localBackend.activeDeviceId === modelData.id ? localTheme.accent : localTheme.border
-                                        border.width: 1
-                                        radius: localTheme.radius
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.margins: 10
-                                            spacing: 8
-
-                                            Text {
-                                                text: localBackend.activeDeviceId === modelData.id ? "●" : "○"
-                                                color: localBackend.activeDeviceId === modelData.id ? localTheme.green : localTheme.muted
-                                                font.pixelSize: 12
-                                            }
-
-                                            Text {
-                                                text: modelData.name
-                                                color: localBackend.activeDeviceId === modelData.id ? localTheme.accent : localTheme.foreground
-                                                font.bold: localBackend.activeDeviceId === modelData.id
-                                                font.pixelSize: 11
-                                                font.family: "monospace"
-                                            }
-
-                                            Item { Layout.fillWidth: true }
-
-                                            Text {
-                                                text: modelData.id
-                                                color: localTheme.muted
-                                                font.pixelSize: 10
-                                                font.family: "monospace"
-                                            }
-                                        }
-
-                                        MouseArea {
-                                            anchors.fill: parent
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: localBackend.activeDeviceId = modelData.id
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // =====================================================
-                        // SECTION 3: MUSIC STORAGE & FAST INDEXER
-                        // =====================================================
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: libCol.implicitHeight + 24
-                            color: localTheme.surface
-                            border.color: localTheme.border
-                            border.width: 1
-                            radius: localTheme.radius
-
-                            ColumnLayout {
-                                id: libCol
-                                anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 10
-
-                                Text {
-                                    text: "[ 03 // MUSIC LIBRARY & INOTIFY MONITOR ]"
-                                    color: localTheme.accent
-                                    font.bold: true
-                                    font.pixelSize: 11
-                                    font.family: "monospace"
                                 }
 
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    spacing: 8
+                                    spacing: 6
 
                                     Rectangle {
                                         Layout.fillWidth: true
-                                        Layout.preferredHeight: 32
+                                        Layout.preferredHeight: 24
                                         color: localTheme.darkBackground
                                         border.color: localTheme.border
                                         border.width: 1
-                                        radius: localTheme.radius
-
-                                        RowLayout {
-                                            anchors.fill: parent
-                                            anchors.leftMargin: 10
-                                            anchors.rightMargin: 10
-                                            spacing: 8
-
-                                            Text {
-                                                text: "DIR ❯"
-                                                color: localTheme.yellow
-                                                font.bold: true
-                                                font.pixelSize: 11
-                                                font.family: "monospace"
-                                            }
-
-                                            TextInput {
-                                                id: folderInput
-                                                Layout.fillWidth: true
-                                                text: localBackend.musicFolder
-                                                color: localTheme.foreground
-                                                font.pixelSize: 11
-                                                font.family: "monospace"
-                                            }
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        Layout.preferredWidth: 110
-                                        Layout.preferredHeight: 32
-                                        color: scanMouse.containsMouse ? localTheme.green : localTheme.accent
-                                        radius: localTheme.radius
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "↻ Rescan Now"
-                                            color: localTheme.darkBackground
-                                            font.bold: true
-                                            font.pixelSize: 10
-                                            font.family: "monospace"
-                                        }
-
-                                        MouseArea {
-                                            id: scanMouse
-                                            anchors.fill: parent
-                                            hoverEnabled: true
-                                            cursorShape: Qt.PointingHandCursor
-                                            onClicked: localBackend.setMusicFolder(folderInput.text)
-                                        }
-                                    }
-                                }
-
-                                // Telemetry metrics
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-
-                                    Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 28
-                                        color: localTheme.darkBackground
-                                        border.color: localTheme.border
-                                        border.width: 1
-                                        radius: localTheme.radius
-
-                                        Text {
-                                            anchors.centerIn: parent
-                                            text: "Library: " + localBackend.tracks.length + " lossless FLAC tracks indexed"
+                                        radius: 2
+                                        TextInput {
+                                            id: libDirInput
+                                            anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; leftMargin: 8; rightMargin: 8 }
+                                            text: localBackend.musicFolder
                                             color: localTheme.foreground
                                             font.pixelSize: 10
                                             font.family: "monospace"
+                                            onEditingFinished: localBackend.setMusicFolder(text)
                                         }
                                     }
 
                                     Rectangle {
-                                        Layout.fillWidth: true
-                                        Layout.preferredHeight: 28
+                                        Layout.preferredWidth: 60
+                                        Layout.preferredHeight: 24
                                         color: localTheme.darkBackground
-                                        border.color: localTheme.border
+                                        border.color: localTheme.accent
                                         border.width: 1
-                                        radius: localTheme.radius
-
+                                        radius: 2
                                         Text {
                                             anchors.centerIn: parent
-                                            text: "Monitoring: inotify active (Zero-polling)"
-                                            color: localTheme.muted
+                                            text: "Rescan"
+                                            color: localTheme.accent
                                             font.pixelSize: 10
                                             font.family: "monospace"
                                         }
-                                    }
-                                }
-                            }
-                        }
-
-                        // =====================================================
-                        // SECTION 4: OMARCHY DESKTOP PALETTES
-                        // =====================================================
-                        Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: thCol.implicitHeight + 24
-                            color: localTheme.surface
-                            border.color: localTheme.border
-                            border.width: 1
-                            radius: localTheme.radius
-
-                            ColumnLayout {
-                                id: thCol
-                                anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 10
-
-                                Text {
-                                    text: "[ 04 // OMARCHY DESKTOP THEMES & PALETTES ]"
-                                    color: localTheme.accent
-                                    font.bold: true
-                                    font.pixelSize: 11
-                                    font.family: "monospace"
-                                }
-
-                                Text {
-                                    text: "Curated Neovim and terminal color palettes with live desktop theme switching."
-                                    color: localTheme.muted
-                                    font.pixelSize: 10
-                                    font.family: "monospace"
-                                }
-
-                                Flow {
-                                    Layout.fillWidth: true
-                                    spacing: 8
-
-                                    Repeater {
-                                        model: [
-                                            { id: "everforest", name: "Everforest", bg: "#232a2e", accent: "#7fbbb3", sub: "#a7c080" },
-                                            { id: "gruvbox", name: "Gruvbox", bg: "#1d2021", accent: "#7daea3", sub: "#d8a657" },
-                                            { id: "nord", name: "Nord", bg: "#242933", accent: "#88c0d0", sub: "#a3be8c" },
-                                            { id: "tokyonight", name: "Tokyo Night", bg: "#1a1b26", accent: "#7aa2f7", sub: "#9ece6a" },
-                                            { id: "kanagawa", name: "Kanagawa", bg: "#16161d", accent: "#7e9cd8", sub: "#76946a" },
-                                            { id: "catppuccin", name: "Catppuccin", bg: "#181825", accent: "#89b4fa", sub: "#a6e3a1" },
-                                            { id: "rose-pine", name: "Rose Pine", bg: "#191724", accent: "#9ccfd8", sub: "#ebbcba" }
-                                        ]
-
-                                        Rectangle {
-                                            width: 132
-                                            height: 38
-                                            radius: localTheme.radius
-                                            color: localTheme.currentTheme === modelData.id ? localTheme.selection : localTheme.darkBackground
-                                            border.color: localTheme.currentTheme === modelData.id ? localTheme.accent : localTheme.border
-                                            border.width: 1
-
-                                            RowLayout {
-                                                anchors.fill: parent
-                                                anchors.margins: 8
-                                                spacing: 6
-
-                                                // Mini color chips
-                                                Row {
-                                                    spacing: 3
-                                                    Rectangle { width: 8; height: 8; radius: 4; color: modelData.accent }
-                                                    Rectangle { width: 8; height: 8; radius: 4; color: modelData.sub }
-                                                }
-
-                                                Text {
-                                                    Layout.fillWidth: true
-                                                    text: modelData.name
-                                                    color: localTheme.currentTheme === modelData.id ? localTheme.accent : localTheme.foreground
-                                                    font.bold: localTheme.currentTheme === modelData.id
-                                                    font.pixelSize: 10
-                                                    font.family: "monospace"
-                                                    elide: Text.ElideRight
-                                                }
-
-                                                Text {
-                                                    text: "✓"
-                                                    visible: localTheme.currentTheme === modelData.id
-                                                    color: localTheme.accent
-                                                    font.pixelSize: 10
-                                                }
-                                            }
-
-                                            MouseArea {
-                                                anchors.fill: parent
-                                                cursorShape: Qt.PointingHandCursor
-                                                onClicked: localTheme.currentTheme = modelData.id
-                                            }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: localBackend.rescanLibrary()
                                         }
                                     }
                                 }
                             }
                         }
 
-                        // =====================================================
-                        // SECTION 5: VIM & HYPRLAND SHORTCUTS
-                        // =====================================================
+                        // ── SECTION: Shortcuts ───────────────────────────────
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: kbCol.implicitHeight + 24
+                            implicitHeight: shortCol.implicitHeight + 24
                             color: localTheme.surface
                             border.color: localTheme.border
                             border.width: 1
-                            radius: localTheme.radius
+                            radius: 2
 
                             ColumnLayout {
-                                id: kbCol
+                                id: shortCol
                                 anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 10
+                                anchors.margins: 12
+                                spacing: 8
 
                                 Text {
-                                    text: "[ 05 // KEYBOARD SHORTCUTS & VIM NAVIGATION ]"
+                                    text: "Shortcuts"
                                     color: localTheme.accent
                                     font.bold: true
                                     font.pixelSize: 11
@@ -1601,47 +1319,43 @@ ApplicationWindow {
                                 }
 
                                 GridLayout {
-                                    columns: 2
-                                    rowSpacing: 6
-                                    columnSpacing: 16
                                     Layout.fillWidth: true
+                                    columns: 2
+                                    columnSpacing: 10
+                                    rowSpacing: 4
 
                                     Repeater {
                                         model: [
-                                            { key: "[ Space ]", action: "Toggle Play / Pause" },
-                                            { key: "[ z ] / [ x ]", action: "Master Volume Down / Up" },
-                                            { key: "[ c ] / [ v ]", action: "Seek Timeline -5s / +5s" },
-                                            { key: "[ p ]", action: "Toggle Bit-Perfect Pure 0dB Mode" },
-                                            { key: "[ m ]", action: "Mute / Restore Volume" },
-                                            { key: "[ Mouse Wheel ]", action: "Smooth Volume Fade on Slider" },
-                                            { key: "[ Click Timeline ]", action: "Instant Absolute Track Seek" },
-                                            { key: "[ 1 - 6 ]", action: "Switch View (Queue, Albums, EQ...)" }
+                                            { key: "Space", action: "Play / Pause" },
+                                            { key: "n / N", action: "Next / Prev track" },
+                                            { key: "z / x", action: "Volume −/+" },
+                                            { key: "c / v", action: "Seek −5s / +5s" },
+                                            { key: "p", action: "Toggle Bit-Perfect" },
+                                            { key: "m", action: "Mute / Restore" },
+                                            { key: "Mouse Wheel", action: "Volume fade" },
+                                            { key: "Click bar", action: "Seek position" },
+                                            { key: "1 – 6", action: "Switch view" }
                                         ]
 
-                                        RowLayout {
-                                            Layout.fillWidth: true
-                                            spacing: 8
-
+                                        delegate: RowLayout {
+                                            Layout.columnSpan: 1
+                                            spacing: 6
                                             Rectangle {
-                                                Layout.preferredWidth: 120
-                                                Layout.preferredHeight: 22
+                                                Layout.preferredWidth: 84
+                                                Layout.preferredHeight: 18
                                                 color: localTheme.darkBackground
                                                 border.color: localTheme.border
                                                 border.width: 1
-                                                radius: localTheme.radius
-
+                                                radius: 2
                                                 Text {
                                                     anchors.centerIn: parent
                                                     text: modelData.key
                                                     color: localTheme.accent
-                                                    font.bold: true
-                                                    font.pixelSize: 10
+                                                    font.pixelSize: 9
                                                     font.family: "monospace"
                                                 }
                                             }
-
                                             Text {
-                                                Layout.fillWidth: true
                                                 text: modelData.action
                                                 color: localTheme.foreground
                                                 font.pixelSize: 10
@@ -1652,12 +1366,14 @@ ApplicationWindow {
                                 }
                             }
                         }
+
+                        Item { Layout.preferredHeight: 16 }
                     }
                 }
             }
         }
 
-        // =====================================================================
+
         // 4. BOTTOM STATUS BAR: [NORMAL] | [Signal Integrity] | [Stats]
         // =====================================================================
         RowLayout {
