@@ -1,0 +1,27 @@
+[package]
+name = "app_core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+common_types.workspace = true
+audio_engine.workspace = true
+audio_backend.workspace = true
+audio_dsp.workspace = true
+library_index.workspace = true
+metadata_svc.workspace = true
+notify.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+walkdir.workspace = true
+

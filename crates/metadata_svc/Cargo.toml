@@ -1,0 +1,18 @@
+[package]
+name = "metadata_svc"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+common_types.workspace = true
+lofty.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+urlencoding.workspace = true
+

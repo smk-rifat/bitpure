@@ -1,0 +1,56 @@
+[workspace]
+members = [
+    "crates/common_types",
+    "crates/audio_backend",
+    "crates/audio_dsp",
+    "crates/audio_engine",
+    "crates/library_index",
+    "crates/metadata_svc",
+    "crates/app_core",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["smk"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# Serialization & Utilities
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+uuid = { version = "1.8", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Audio & DSP
+symphonia = { version = "0.5", features = ["all"] }
+rtrb = "0.3"
+crossbeam-channel = "0.5"
+alsa = "0.9"
+
+# Database & File System
+rusqlite = { version = "0.31", features = ["bundled", "uuid", "chrono"] }
+notify = "6.1"
+walkdir = "2.5"
+rayon = "1.10"
+lofty = "0.20"
+
+# Async & Networking
+tokio = { version = "1.38", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+urlencoding = "2.1"
+
+# Internal Crates
+common_types = { path = "crates/common_types" }
+audio_backend = { path = "crates/audio_backend" }
+audio_dsp = { path = "crates/audio_dsp" }
+audio_engine = { path = "crates/audio_engine" }
+library_index = { path = "crates/library_index" }
+metadata_svc = { path = "crates/metadata_svc" }
+app_core = { path = "crates/app_core" }
+

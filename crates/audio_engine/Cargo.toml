@@ -1,0 +1,17 @@
+[package]
+name = "audio_engine"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+common_types.workspace = true
+audio_backend.workspace = true
+audio_dsp.workspace = true
+symphonia.workspace = true
+rtrb.workspace = true
+crossbeam-channel.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+

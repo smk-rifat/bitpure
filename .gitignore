@@ -1,0 +1,25 @@
+# Build outputs
+target/
+ui/build/
+bin/
+
+# Logs and runtime sockets
+*.log
+*.sock
+/tmp/audioplayer-mpv.sock
+
+# Qt / C++ generated files
+ui/src/moc_*.cpp
+ui/src/qrc_*.cpp
+*.o
+*.a
+*.so
+Makefile*
+.qmake.stash
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+*~
+*.swp

@@ -1,0 +1,19 @@
+[package]
+name = "library_index"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+common_types.workspace = true
+rusqlite.workspace = true
+notify.workspace = true
+walkdir.workspace = true
+rayon.workspace = true
+lofty.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+

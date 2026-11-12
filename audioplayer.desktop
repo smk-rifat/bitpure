@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Audiophile Player
+Comment=Bit-Perfect Local Lossless Music Player
+Exec=/home/smk/Music_Player/bin/audioplayer
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;
+StartupNotify=true
+StartupWMClass=audioplayer
+
