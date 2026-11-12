@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=BitPure
+Comment=Audiophile Bit-Perfect Lossless Music Player
+Exec=/home/smk/Music_Player/bin/bitpure
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;
+StartupNotify=true
+StartupWMClass=bitpure

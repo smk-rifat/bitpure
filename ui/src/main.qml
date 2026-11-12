@@ -10,7 +10,7 @@ ApplicationWindow {
     height: 680
     minimumWidth: 840
     minimumHeight: 560
-    title: "Audiophile Player — " + localTheme.currentTheme.toUpperCase()
+    title: "BitPure — " + localTheme.currentTheme.toUpperCase()
 
     Theme {
         id: localTheme
