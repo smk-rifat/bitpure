@@ -25,6 +25,7 @@ class Backend : public QObject {
     Q_PROPERTY(QVariantList tracks READ tracks NOTIFY libraryChanged)
     Q_PROPERTY(QVariantList recommendations READ recommendations NOTIFY recommendationsChanged)
     Q_PROPERTY(int activeEqPreset READ activeEqPreset WRITE setActiveEqPreset NOTIFY eqChanged)
+    Q_PROPERTY(QVariantList eqGains READ eqGains NOTIFY eqChanged)
     Q_PROPERTY(QString musicFolder READ musicFolder NOTIFY musicFolderChanged)
     Q_PROPERTY(QString developerName READ developerName CONSTANT)
 
@@ -57,6 +58,7 @@ public:
 
     int activeEqPreset() const { return m_activeEqPreset; }
     void setActiveEqPreset(int preset);
+    QVariantList eqGains() const;
 
     QVariantList devices() const { return m_devices; }
     QVariantList albums() const { return m_albums; }
@@ -107,6 +109,7 @@ private:
     qint64 m_positionMs = 0;
     qint64 m_durationMs = 0;
     int m_activeEqPreset = 0;
+    float m_eqGains[10] = {0.0f};
     QString m_musicFolder = "/home/smk/Music_LL";
     QString m_nowPlayingTitle = "Ready";
     QString m_nowPlayingArtist = "Select an album or track";

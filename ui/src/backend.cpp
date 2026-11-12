@@ -169,16 +169,41 @@ void Backend::setMusicFolder(const QString &folderPath) {
 }
 
 void Backend::setActiveEqPreset(int preset) {
-    if (m_activeEqPreset != preset) {
-        m_activeEqPreset = preset;
-        audioplayer_set_eq_preset(preset);
+    m_activeEqPreset = preset;
+    audioplayer_set_eq_preset(preset);
+
+    // Synchronize local gains cache
+    static const float presetGains[5][10] = {
+        { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, // Flat
+        { 1.5f, 1.0f, 0.5f, 0.0f, 0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 1.5f }, // Balanced
+        { 5.0f, 4.0f, 3.0f, 1.5f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }, // Bass Boost
+        { 2.0f, 1.8f, 1.2f, 0.5f, 0.0f, -0.5f, -0.8f, -1.0f, -1.5f, -2.0f }, // Warm Vocal
+        { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -1.0f, -2.0f, -3.0f, -4.0f, -5.0f }  // Treble Clean
+    };
+
+    if (preset >= 0 && preset < 5) {
+        for (int i = 0; i < 10; ++i) {
+            m_eqGains[i] = presetGains[preset][i];
+        }
+    }
+    emit eqChanged();
+}
+
+void Backend::setEqBand(int band, float gainDb) {
+    if (band >= 0 && band < 10) {
+        m_eqGains[band] = gainDb;
+        audioplayer_set_eq_band(band, gainDb);
+        m_activeEqPreset = -1; // Custom user setting
         emit eqChanged();
     }
 }
 
-void Backend::setEqBand(int band, float gainDb) {
-    audioplayer_set_eq_band(band, gainDb);
-    emit eqChanged();
+QVariantList Backend::eqGains() const {
+    QVariantList list;
+    for (int i = 0; i < 10; ++i) {
+        list.append(m_eqGains[i]);
+    }
+    return list;
 }
 
 void Backend::fetchRecommendations(const QString &artist) {

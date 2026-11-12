@@ -7,3 +7,4 @@ Type=Application
 Categories=AudioVideo;Audio;Player;
 StartupNotify=true
 StartupWMClass=bitpure
+
