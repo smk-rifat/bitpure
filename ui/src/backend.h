@@ -7,8 +7,15 @@
 #include <QVariantMap>
 #include <QMap>
 
+#include "settings_manager.h"
+#include "system_monitor.h"
+#include "mood_service.h"
+#include "translation_service.h"
+
 class Backend : public QObject {
     Q_OBJECT
+
+    // Core playback
     Q_PROPERTY(bool isPlaying READ isPlaying NOTIFY playStateChanged)
     Q_PROPERTY(bool isBitPerfect READ isBitPerfect WRITE setBitPerfect NOTIFY bitPerfectChanged)
     Q_PROPERTY(float volume READ volume WRITE setVolume NOTIFY volumeChanged)
@@ -32,6 +39,8 @@ class Backend : public QObject {
     Q_PROPERTY(float preamp READ preamp WRITE setPreamp NOTIFY eqChanged)
     Q_PROPERTY(QString lyrics READ lyrics NOTIFY lyricsChanged)
     Q_PROPERTY(QString currentLyricLine READ currentLyricLine NOTIFY currentLyricLineChanged)
+    Q_PROPERTY(QString translatedLyricLine READ translatedLyricLine NOTIFY translatedLyricLineChanged)
+    Q_PROPERTY(bool lyricsTranslationEnabled READ lyricsTranslationEnabled WRITE setLyricsTranslationEnabled NOTIFY lyricsTranslationEnabledChanged)
     Q_PROPERTY(QVariantList customEqPresets READ customEqPresets NOTIFY customEqPresetsChanged)
     Q_PROPERTY(QString musicFolder READ musicFolder NOTIFY musicFolderChanged)
     Q_PROPERTY(QString developerName READ developerName CONSTANT)
@@ -51,9 +60,20 @@ class Backend : public QObject {
     Q_PROPERTY(QString activePlaylistName READ activePlaylistName WRITE setActivePlaylistName NOTIFY activePlaylistNameChanged)
     Q_PROPERTY(QVariantList activePlaylistTracks READ activePlaylistTracks NOTIFY activePlaylistTracksChanged)
 
+    // Subsystems
+    Q_PROPERTY(SettingsManager* settings READ settings CONSTANT)
+    Q_PROPERTY(SystemMonitor* systemMonitor READ systemMonitor CONSTANT)
+    Q_PROPERTY(MoodService* moodService READ moodService CONSTANT)
+    Q_PROPERTY(TranslationService* translationService READ translationService CONSTANT)
+
 public:
     explicit Backend(QObject *parent = nullptr);
     ~Backend() override;
+
+    SettingsManager* settings() const { return m_settings; }
+    SystemMonitor* systemMonitor() const { return m_systemMonitor; }
+    MoodService* moodService() const { return m_moodService; }
+    TranslationService* translationService() const { return m_translationService; }
 
     bool isPlaying() const { return m_isPlaying; }
     bool isBitPerfect() const { return m_isBitPerfect; }
@@ -78,6 +98,10 @@ public:
 
     QString lyrics() const { return m_lyrics; }
     QString currentLyricLine() const { return m_currentLyricLine; }
+    QString translatedLyricLine() const { return m_translatedLyricLine; }
+    bool lyricsTranslationEnabled() const { return m_lyricsTranslationEnabled; }
+    void setLyricsTranslationEnabled(bool e);
+
     QVariantList customEqPresets() const { return m_customEqPresets; }
 
     QString musicFolder() const { return m_musicFolder; }
@@ -127,6 +151,14 @@ public slots:
     void refreshDevices();
     void fetchRecommendations(const QString &artist);
 
+    // Mood Playback
+    void playMood(const QString &mood);
+
+    // Album details & playback
+    QVariantList getAlbumTracks(const QString &albumId);
+    void playAlbum(const QString &albumId);
+    void rescanLibrary();
+
     // EQ
     void setEqBand(int band, float gainDb);
     void resetEq();
@@ -135,7 +167,7 @@ public slots:
     void applyCustomPreset(int index);
 
     // Lyrics
-    void fetchLyrics(const QString &artist, const QString &title);
+    void fetchLyrics(const QString &artist, const QString &title, const QString &filePath = "");
 
     // Liked songs
     bool isTrackLiked(const QString &filePath) const;
@@ -172,6 +204,8 @@ signals:
     void customEqPresetsChanged();
     void lyricsChanged();
     void currentLyricLineChanged();
+    void translatedLyricLineChanged();
+    void lyricsTranslationEnabledChanged();
     void musicFolderChanged();
     void volumeChanged();
     void shuffleModeChanged();
@@ -191,6 +225,11 @@ private:
     void initMpv();
     void sendMpvCommand(const QString &cmd);
 
+    SettingsManager *m_settings = nullptr;
+    SystemMonitor *m_systemMonitor = nullptr;
+    MoodService *m_moodService = nullptr;
+    TranslationService *m_translationService = nullptr;
+
     bool m_isPlaying = false;
     bool m_isBitPerfect = true;
     float m_volume = 1.0f;
@@ -200,8 +239,11 @@ private:
     float m_eqGains[10] = {0.0f};
     float m_preamp = 0.0f;
     QVariantList m_customEqPresets;
+
     QString m_lyrics = "No lyrics loaded.";
     QString m_currentLyricLine = "";
+    QString m_translatedLyricLine = "";
+    bool m_lyricsTranslationEnabled = false;
     QList<QPair<qint64, QString>> m_syncedLyrics;
     class QNetworkAccessManager *m_netManager = nullptr;
 
@@ -229,7 +271,7 @@ private:
     QString m_nowPlayingArtist = "Select an album or track";
     QString m_nowPlayingFilePath = "";
     QString m_formatBadge = "FLAC | 24-bit | 96 kHz | Stereo";
-    QString m_signalPathInfo = "[Bit-Perfect Pure Mode: hw:1,0 (NICEHCK NK1 MAX)]";
+    QString m_signalPathInfo = "[Bit-Perfect Pure Mode: hw:1,0 (Direct)]";
     QString m_activeDeviceId = "hw:1,0";
 
     QVariantList m_devices;

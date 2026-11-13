@@ -1,4 +1,8 @@
 #include "backend.h"
+#include "settings_manager.h"
+#include "system_monitor.h"
+#include "mood_service.h"
+#include "translation_service.h"
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -31,12 +35,44 @@ extern "C" {
     int audioplayer_scan_directory(const char *dir_path);
     int audioplayer_watch_directory(const char *dir_path);
     char *audioplayer_get_albums_json(int sort_type);
+    char *audioplayer_get_album_tracks_json(const char *album_id_str);
     char *audioplayer_get_tracks_json(int sort_type);
     char *audioplayer_get_recommendations_json(const char *artist);
     void audioplayer_free_string(char *s);
 }
 
 Backend::Backend(QObject *parent) : QObject(parent) {
+    m_settings = new SettingsManager(this);
+    m_systemMonitor = new SystemMonitor(this);
+    m_moodService = new MoodService(this);
+    m_translationService = new TranslationService(this);
+
+    // Apply loaded persistent settings
+    m_volume = m_settings->volume();
+    m_isBitPerfect = m_settings->isBitPerfect();
+    m_shuffleMode = m_settings->shuffleMode();
+    m_repeatMode = m_settings->repeatMode();
+    m_musicFolder = m_settings->musicFolder();
+    m_lyricsTranslationEnabled = m_settings->lyricsTranslate();
+
+    connect(m_translationService, &TranslationService::translationReady, this, [this](const QString &orig, const QString &trans) {
+        if (orig == m_currentLyricLine) {
+            m_translatedLyricLine = trans;
+            emit translatedLyricLineChanged();
+        }
+    });
+
+    connect(m_settings, &SettingsManager::allSettingsReset, this, [this]() {
+        setBitPerfect(m_settings->isBitPerfect());
+        setVolume(m_settings->volume());
+        setShuffleMode(m_settings->shuffleMode());
+        setRepeatMode(m_settings->repeatMode());
+        setActiveEqPreset(m_settings->activeEqPreset());
+        setPreamp(m_settings->preamp());
+        setMusicFolder(m_settings->musicFolder());
+        setLyricsTranslationEnabled(m_settings->lyricsTranslate());
+    });
+
     m_netManager = new QNetworkAccessManager(this);
     audioplayer_init(nullptr);
     initMpv();
@@ -188,6 +224,7 @@ void Backend::watchFolder(const QString &folderPath) {
 
 void Backend::setMusicFolder(const QString &folderPath) {
     m_musicFolder = folderPath;
+    if (m_settings) m_settings->setMusicFolder(folderPath);
     emit musicFolderChanged();
     scanFolder(folderPath);
     watchFolder(folderPath);
@@ -196,6 +233,7 @@ void Backend::setMusicFolder(const QString &folderPath) {
 void Backend::setActiveEqPreset(int preset) {
     m_activeEqPreset = preset;
     audioplayer_set_eq_preset(preset);
+    if (m_settings) m_settings->setActiveEqPreset(preset);
 
     // Synchronize local gains cache
     static const float presetGains[5][10] = {
@@ -219,12 +257,14 @@ void Backend::setEqBand(int band, float gainDb) {
         m_eqGains[band] = gainDb;
         audioplayer_set_eq_band(band, gainDb);
         m_activeEqPreset = -1; // Custom user setting
+        if (m_settings) m_settings->setActiveEqPreset(-1);
         emit eqChanged();
     }
 }
 
 void Backend::setPreamp(float db) {
     m_preamp = db;
+    if (m_settings) m_settings->setPreamp(db);
     emit eqChanged();
 }
 
@@ -288,6 +328,7 @@ void Backend::refreshDevices() {
 void Backend::setBitPerfect(bool enabled) {
     m_isBitPerfect = enabled;
     audioplayer_set_bit_perfect(enabled ? 1 : 0);
+    if (m_settings) m_settings->setIsBitPerfect(enabled);
 
     if (enabled) {
         m_signalPathInfo = QString("[Bit-Perfect Pure Mode: %1 (Direct Line-Out 0dB)]").arg(m_activeDeviceId);
@@ -304,12 +345,14 @@ void Backend::setVolume(float v) {
     m_volume = qBound(0.0f, v, 1.0f);
     int mpvVol = (int)(m_volume * 100.0f);
     sendMpvCommand(QString("{\"command\": [\"set_property\", \"volume\", %1]}\n").arg(mpvVol));
+    if (m_settings) m_settings->setVolume(m_volume);
     emit volumeChanged();
 }
 
 void Backend::setActiveDeviceId(const QString &id) {
     m_activeDeviceId = id;
     audioplayer_set_device(id.toUtf8().constData());
+    if (m_settings) m_settings->setActiveDeviceId(id);
     setBitPerfect(m_isBitPerfect);
     emit deviceChanged();
 }
@@ -335,7 +378,7 @@ void Backend::playTrack(const QString &filePath, const QString &title, const QSt
         }
     }
 
-    fetchLyrics(artist, title);
+    fetchLyrics(artist, title, filePath);
 
     sendMpvCommand(QString("{\"command\": [\"loadfile\", \"%1\"]}\n").arg(filePath));
     sendMpvCommand("{\"command\": [\"set_property\", \"pause\", false]}\n");
@@ -394,25 +437,25 @@ void Backend::stop() {
 }
 
 void Backend::cycleShuffleMode() {
-    m_shuffleMode = (m_shuffleMode + 1) % 3;
-    emit shuffleModeChanged();
+    setShuffleMode((m_shuffleMode + 1) % 3);
 }
 
 void Backend::setShuffleMode(int mode) {
     if (m_shuffleMode != mode) {
         m_shuffleMode = mode;
+        if (m_settings) m_settings->setShuffleMode(mode);
         emit shuffleModeChanged();
     }
 }
 
 void Backend::cycleRepeatMode() {
-    m_repeatMode = (m_repeatMode + 1) % 3;
-    emit repeatModeChanged();
+    setRepeatMode((m_repeatMode + 1) % 3);
 }
 
 void Backend::setRepeatMode(int mode) {
     if (m_repeatMode != mode) {
         m_repeatMode = mode;
+        if (m_settings) m_settings->setRepeatMode(mode);
         emit repeatModeChanged();
     }
 }
@@ -921,11 +964,47 @@ bool Backend::deleteTrackFromStorage(const QString &filePath) {
     return true;
 }
 
-void Backend::fetchLyrics(const QString &artist, const QString &title) {
+void Backend::fetchLyrics(const QString &artist, const QString &title, const QString &filePath) {
     m_syncedLyrics.clear();
     m_currentLyricLine = "";
+    m_translatedLyricLine = "";
     emit currentLyricLineChanged();
+    emit translatedLyricLineChanged();
 
+    // 1. Check local .lrc file right next to audio file
+    if (!filePath.isEmpty()) {
+        QFileInfo fi(filePath);
+        QString lrcPath = fi.dir().filePath(fi.completeBaseName() + ".lrc");
+        if (QFile::exists(lrcPath)) {
+            QFile lf(lrcPath);
+            if (lf.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                QString lrcContent = QString::fromUtf8(lf.readAll());
+                m_syncedLyrics.clear();
+                QStringList lines = lrcContent.split('\n');
+                static QRegularExpression re("\\[(\\d+):(\\d+(?:\\.\\d+)?)\\](.*)");
+                for (const QString &line : lines) {
+                    QRegularExpressionMatch match = re.match(line.trimmed());
+                    if (match.hasMatch()) {
+                        qint64 min = match.captured(1).toLongLong();
+                        double sec = match.captured(2).toDouble();
+                        qint64 totalMs = (min * 60 * 1000) + (qint64)(sec * 1000.0);
+                        QString text = match.captured(3).trimmed();
+                        if (!text.isEmpty()) {
+                            m_syncedLyrics.append(qMakePair(totalMs, text));
+                        }
+                    }
+                }
+                if (!m_syncedLyrics.isEmpty()) {
+                    m_lyrics = lrcContent;
+                    emit lyricsChanged();
+                    updateCurrentLyric(m_positionMs);
+                    return;
+                }
+            }
+        }
+    }
+
+    // 2. Query LRCLIB for synced lyrics
     QString cleanArtist = artist.split(',').first().split('&').first().trimmed();
     QString cleanTitle = title;
     int paren = cleanTitle.indexOf('(');
@@ -1003,8 +1082,74 @@ void Backend::updateCurrentLyric(qint64 posMs) {
             break;
         }
     }
-    if (!found.isEmpty() && found != m_currentLyricLine) {
+    if (found != m_currentLyricLine) {
         m_currentLyricLine = found;
         emit currentLyricLineChanged();
+
+        if (m_lyricsTranslationEnabled && !found.isEmpty()) {
+            QString cached = m_translationService->getCachedTranslation(found);
+            if (!cached.isEmpty()) {
+                m_translatedLyricLine = cached;
+                emit translatedLyricLineChanged();
+            } else {
+                m_translationService->requestTranslation(found, m_settings ? m_settings->lyricsTargetLang() : "en");
+            }
+        } else {
+            m_translatedLyricLine = "";
+            emit translatedLyricLineChanged();
+        }
     }
+}
+
+void Backend::setLyricsTranslationEnabled(bool e) {
+    if (m_lyricsTranslationEnabled != e) {
+        m_lyricsTranslationEnabled = e;
+        if (m_settings) m_settings->setLyricsTranslate(e);
+        emit lyricsTranslationEnabledChanged();
+        if (e && !m_currentLyricLine.isEmpty()) {
+            m_translationService->requestTranslation(m_currentLyricLine, m_settings ? m_settings->lyricsTargetLang() : "en");
+        } else {
+            m_translatedLyricLine = "";
+            emit translatedLyricLineChanged();
+        }
+    }
+}
+
+QVariantList Backend::getAlbumTracks(const QString &albumId) {
+    QVariantList list;
+    char *c_res = audioplayer_get_album_tracks_json(albumId.toUtf8().constData());
+    if (c_res) {
+        QJsonDocument doc = QJsonDocument::fromJson(c_res);
+        audioplayer_free_string(c_res);
+        if (doc.isArray()) {
+            for (const auto &v : doc.array()) {
+                list.append(v.toObject().toVariantMap());
+            }
+        }
+    }
+    return list;
+}
+
+void Backend::playAlbum(const QString &albumId) {
+    QVariantList trks = getAlbumTracks(albumId);
+    if (!trks.isEmpty()) {
+        m_playQueue = trks;
+        emit playQueueChanged();
+        QVariantMap first = trks.first().toMap();
+        playTrack(first["file_path"].toString(), first["title"].toString(), first["track_artist"].toString());
+    }
+}
+
+void Backend::playMood(const QString &mood) {
+    QVariantList scored = m_moodService->scoreTracksForMood(mood, m_tracks, m_likedTrackPaths);
+    if (!scored.isEmpty()) {
+        m_playQueue = scored;
+        emit playQueueChanged();
+        QVariantMap first = scored.first().toMap();
+        playTrack(first["file_path"].toString(), first["title"].toString(), first["track_artist"].toString());
+    }
+}
+
+void Backend::rescanLibrary() {
+    scanFolder(m_musicFolder);
 }

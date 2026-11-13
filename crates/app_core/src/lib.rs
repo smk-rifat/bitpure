@@ -204,9 +204,43 @@ pub extern "C" fn audioplayer_scan_directory(dir_path: *const c_char) -> i32 {
                             )
                         };
 
+                    // Find potential cover art in the same directory
+                    let mut cover_path: Option<PathBuf> = None;
+                    if let Some(parent) = p.parent() {
+                        let candidate_names = [
+                            "cover.jpg", "cover.png", "folder.jpg", "folder.png",
+                            "front.jpg", "front.png", "albumart.jpg", "albumart.png",
+                            "Cover.jpg", "Cover.png", "Folder.jpg", "Folder.png"
+                        ];
+                        for c_name in &candidate_names {
+                            let cand = parent.join(c_name);
+                            if cand.exists() {
+                                cover_path = Some(cand);
+                                break;
+                            }
+                        }
+                    }
+
+                    // Canonicalize album title if generic folder name or empty
+                    let raw_album = album_title.trim();
+                    let raw_album_lower = raw_album.to_lowercase();
+                    let canonical_album = if raw_album.is_empty()
+                        || raw_album_lower == "sample_music"
+                        || raw_album_lower == "music_ll"
+                        || raw_album_lower == "music"
+                        || raw_album_lower == "unknown album"
+                        || raw_album_lower == "lossless album"
+                    {
+                        format!("{} - Singles & EPs", artist.trim())
+                    } else {
+                        raw_album.to_string()
+                    };
+
+                    let canonical_artist = artist.trim().to_string();
+
                     let album_id = inst
                         .library
-                        .find_or_create_album(&album_title, &artist, year, genre)
+                        .find_or_create_album(&canonical_album, &canonical_artist, year, genre, cover_path)
                         .unwrap_or_else(|_| AlbumId::new());
 
                     let track = Track {
@@ -247,6 +281,7 @@ pub extern "C" fn audioplayer_scan_directory(dir_path: *const c_char) -> i32 {
                 }
             }
         }
+        let _ = inst.library.cleanup_and_recount_albums();
     }
     count as i32
 }
@@ -301,6 +336,28 @@ pub extern "C" fn audioplayer_get_albums_json(sort_type: i32) -> *mut c_char {
     if let Some(inst) = state.as_ref() {
         if let Ok(albums) = inst.library.list_albums(sort) {
             let json = serde_json::to_string(&albums).unwrap_or_else(|_| "[]".to_string());
+            return CString::new(json).unwrap().into_raw();
+        }
+    }
+    CString::new("[]").unwrap().into_raw()
+}
+
+#[no_mangle]
+pub extern "C" fn audioplayer_get_album_tracks_json(album_id_str: *const c_char) -> *mut c_char {
+    if album_id_str.is_null() {
+        return CString::new("[]").unwrap().into_raw();
+    }
+    let id_str = unsafe { CStr::from_ptr(album_id_str).to_string_lossy().to_string() };
+    let uuid = match uuid::Uuid::parse_str(&id_str) {
+        Ok(u) => u,
+        Err(_) => return CString::new("[]").unwrap().into_raw(),
+    };
+    let album_id = common_types::AlbumId(uuid);
+
+    let state = APP_STATE.lock().unwrap();
+    if let Some(inst) = state.as_ref() {
+        if let Ok(tracks) = inst.library.list_album_tracks(album_id) {
+            let json = serde_json::to_string(&tracks).unwrap_or_else(|_| "[]".to_string());
             return CString::new(json).unwrap().into_raw();
         }
     }

@@ -128,30 +128,73 @@ impl SqliteLibrary {
         artist: &str,
         year: Option<u32>,
         genre: Option<String>,
+        cover_art_path: Option<PathBuf>,
     ) -> Result<AlbumId, LibraryError> {
-        let mut stmt = self.conn.prepare("SELECT id, track_count FROM albums WHERE title = ?1 AND album_artist = ?2")?;
-        let mut rows = stmt.query(params![title, artist])?;
+        let clean_title = title.trim();
+        let clean_artist = artist.trim();
+
+        let mut stmt = self.conn.prepare(
+            "SELECT id, track_count, cover_art_path FROM albums WHERE LOWER(TRIM(title)) = LOWER(?1) AND LOWER(TRIM(album_artist)) = LOWER(?2)"
+        )?;
+        let mut rows = stmt.query(params![clean_title, clean_artist])?;
         if let Some(row) = rows.next()? {
             let id_str: String = row.get(0)?;
-            let count: i64 = row.get(1)?;
+            let existing_cover: Option<String> = row.get(2)?;
             let id = AlbumId(Uuid::parse_str(&id_str).unwrap_or_else(|_| Uuid::new_v4()));
-            let _ = self.conn.execute("UPDATE albums SET track_count = ?1 WHERE id = ?2", params![count + 1, id_str]);
+
+            // Update cover if missing
+            if existing_cover.is_none() && cover_art_path.is_some() {
+                let cov_str = cover_art_path.as_ref().map(|p| p.to_string_lossy().to_string());
+                let _ = self.conn.execute("UPDATE albums SET cover_art_path = ?1 WHERE id = ?2", params![cov_str, id_str]);
+            }
             return Ok(id);
         }
 
         let new_id = AlbumId::new();
         let album = Album {
             id: new_id,
-            title: title.to_string(),
-            album_artist: artist.to_string(),
+            title: clean_title.to_string(),
+            album_artist: clean_artist.to_string(),
             year,
             genre,
             disc_count: 1,
-            cover_art_path: None,
-            track_count: 1,
+            cover_art_path,
+            track_count: 0,
         };
         self.upsert_album(&album)?;
         Ok(new_id)
+    }
+
+    pub fn cleanup_and_recount_albums(&self) -> Result<(), LibraryError> {
+        // Delete orphaned albums without any tracks
+        self.conn.execute(
+            "DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks)",
+            [],
+        )?;
+        // Accurately recount tracks for every album
+        self.conn.execute(
+            "UPDATE albums SET track_count = (SELECT COUNT(*) FROM tracks WHERE tracks.album_id = albums.id)",
+            [],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_album_tracks(&self, album_id: AlbumId) -> Result<Vec<Track>, LibraryError> {
+        let sql = "SELECT id, album_id, file_path, file_size, title, track_artist, track_number,
+                          disc_number, duration_ms, codec, bit_depth, sample_rate, channels,
+                          replaygain_track_gain, replaygain_track_peak, replaygain_album_gain,
+                          replaygain_album_peak, is_preferred
+                   FROM tracks
+                   WHERE album_id = ?1
+                   ORDER BY disc_number ASC, track_number ASC, title ASC";
+
+        let mut stmt = self.conn.prepare(sql)?;
+        let rows = stmt.query_map(params![album_id.0.to_string()], |row| self.row_to_track(row))?;
+        let mut tracks = Vec::new();
+        for r in rows {
+            tracks.push(r?);
+        }
+        Ok(tracks)
     }
 
     pub fn upsert_track(&self, track: &Track) -> Result<(), LibraryError> {

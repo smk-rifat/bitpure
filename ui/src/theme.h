@@ -1,92 +1,114 @@
 #pragma once
 
-#include <QFileSystemWatcher>
 #include <QObject>
-#include <QTimer>
-#include <QColor>
+#include <QString>
+#include <QStringList>
+#include <QMap>
 
 class Theme : public QObject {
     Q_OBJECT
+
+    // Family and Variant properties
+    Q_PROPERTY(QString family READ family WRITE setFamily NOTIFY themeChanged)
+    Q_PROPERTY(QString variant READ variant WRITE setVariant NOTIFY themeChanged)
     Q_PROPERTY(QString currentTheme READ currentTheme WRITE setTheme NOTIFY themeChanged)
-    Q_PROPERTY(QString accent READ accent NOTIFY changed)
+    Q_PROPERTY(QStringList availableFamilies READ availableFamilies CONSTANT)
+    Q_PROPERTY(QStringList availableVariants READ availableVariants NOTIFY themeChanged)
+
+    // Semantic design tokens
     Q_PROPERTY(QString background READ background NOTIFY changed)
-    Q_PROPERTY(QString darkBackground READ darkBackground NOTIFY changed)
     Q_PROPERTY(QString surface READ surface NOTIFY changed)
-    Q_PROPERTY(QString surfaceLighter READ surfaceLighter NOTIFY changed)
-    Q_PROPERTY(QString foreground READ foreground NOTIFY changed)
-    Q_PROPERTY(QString muted READ muted NOTIFY changed)
+    Q_PROPERTY(QString surfaceElevated READ surfaceElevated NOTIFY changed)
+    Q_PROPERTY(QString text READ text NOTIFY changed)
+    Q_PROPERTY(QString textMuted READ textMuted NOTIFY changed)
     Q_PROPERTY(QString border READ border NOTIFY changed)
     Q_PROPERTY(QString borderHighlight READ borderHighlight NOTIFY changed)
+    Q_PROPERTY(QString accent READ accent NOTIFY changed)
     Q_PROPERTY(QString selection READ selection NOTIFY changed)
-    Q_PROPERTY(QString yellow READ yellow NOTIFY changed)
-    Q_PROPERTY(QString green READ green NOTIFY changed)
+    Q_PROPERTY(QString player READ player NOTIFY changed)
+    Q_PROPERTY(QString lyricsCurrent READ lyricsCurrent NOTIFY changed)
+    Q_PROPERTY(QString lyricsPrevious READ lyricsPrevious NOTIFY changed)
+    Q_PROPERTY(QString lyricsInactive READ lyricsInactive NOTIFY changed)
+    Q_PROPERTY(QString statusSuccess READ statusSuccess NOTIFY changed)
+    Q_PROPERTY(QString statusWarning READ statusWarning NOTIFY changed)
+    Q_PROPERTY(QString statusError READ statusError NOTIFY changed)
+
+    // Legacy compatibility aliases
+    Q_PROPERTY(QString foreground READ text NOTIFY changed)
+    Q_PROPERTY(QString muted READ textMuted NOTIFY changed)
+    Q_PROPERTY(QString darkBackground READ background NOTIFY changed)
+    Q_PROPERTY(QString surfaceLighter READ surfaceElevated NOTIFY changed)
+    Q_PROPERTY(QString yellow READ statusWarning NOTIFY changed)
+    Q_PROPERTY(QString green READ statusSuccess NOTIFY changed)
     Q_PROPERTY(QString orange READ orange NOTIFY changed)
-    Q_PROPERTY(QString red READ red NOTIFY changed)
-    Q_PROPERTY(QString cyan READ cyan NOTIFY changed)
+    Q_PROPERTY(QString red READ statusError NOTIFY changed)
+    Q_PROPERTY(QString cyan READ accent NOTIFY changed)
     Q_PROPERTY(int radius READ radius NOTIFY changed)
-    Q_PROPERTY(QStringList availableThemes READ availableThemes CONSTANT)
 
 public:
     explicit Theme(QObject *parent = nullptr);
 
-    QString currentTheme() const { return m_currentTheme; }
+    QString family() const { return m_family; }
+    void setFamily(const QString &f);
+
+    QString variant() const { return m_variant; }
+    void setVariant(const QString &v);
+
+    QString currentTheme() const { return m_variant; }
     void setTheme(const QString &name);
 
-    QString accent() const { return m_accent; }
+    Q_INVOKABLE void setFamilyAndVariant(const QString &fam, const QString &var);
+    Q_INVOKABLE QStringList variantsForFamily(const QString &fam) const;
+
+    QStringList availableFamilies() const;
+    QStringList availableVariants() const;
+
+    // Tokens
     QString background() const { return m_background; }
-    QString darkBackground() const { return m_darkBackground; }
     QString surface() const { return m_surface; }
-    QString surfaceLighter() const { return m_surfaceLighter; }
-    QString foreground() const { return m_foreground; }
-    QString muted() const { return m_muted; }
+    QString surfaceElevated() const { return m_surfaceElevated; }
+    QString text() const { return m_text; }
+    QString textMuted() const { return m_textMuted; }
     QString border() const { return m_border; }
     QString borderHighlight() const { return m_borderHighlight; }
+    QString accent() const { return m_accent; }
     QString selection() const { return m_selection; }
-    QString yellow() const { return m_yellow; }
-    QString green() const { return m_green; }
+    QString player() const { return m_player; }
+    QString lyricsCurrent() const { return m_lyricsCurrent; }
+    QString lyricsPrevious() const { return m_lyricsPrevious; }
+    QString lyricsInactive() const { return m_lyricsInactive; }
+    QString statusSuccess() const { return m_statusSuccess; }
+    QString statusWarning() const { return m_statusWarning; }
+    QString statusError() const { return m_statusError; }
     QString orange() const { return m_orange; }
-    QString red() const { return m_red; }
-    QString cyan() const { return m_cyan; }
     int radius() const { return m_radius; }
-
-    QStringList availableThemes() const {
-        return {
-            "everforest", "gruvbox", "tokyo-night", "nord",
-            "catppuccin", "rose-pine", "kanagawa", "matte-black",
-            "hackerman", "retro-82", "lumon", "solitude",
-            "starship", "ristretto", "jade-horse", "miasma",
-            "ethereal", "last-horizon", "catppuccin-latte", "flexoki-light",
-            "lupine", "vantablack", "white"
-        };
-    }
 
 signals:
     void changed();
     void themeChanged();
 
-private slots:
-    void reload();
-
 private:
-    QString m_currentTheme = "everforest";
-    QString m_accent = "#7fbbb3";
-    QString m_background = "#232a2e";
-    QString m_darkBackground = "#1e2326";
-    QString m_surface = "#2d353b";
-    QString m_surfaceLighter = "#343f44";
-    QString m_foreground = "#d3c6aa";
-    QString m_muted = "#859289";
-    QString m_border = "#475258";
-    QString m_borderHighlight = "#7fbbb3";
-    QString m_selection = "#3d484d";
-    QString m_yellow = "#dbbc7f";
-    QString m_green = "#a7c080";
-    QString m_orange = "#e09d7f";
-    QString m_red = "#e67e80";
-    QString m_cyan = "#83c092";
+    void applyPalette();
+
+    QString m_family = "Gruvbox";
+    QString m_variant = "Gruvbox Material Dark";
+
+    QString m_background = "#282828";
+    QString m_surface = "#32302f";
+    QString m_surfaceElevated = "#3c3836";
+    QString m_text = "#ebdbb2";
+    QString m_textMuted = "#a89984";
+    QString m_border = "#504945";
+    QString m_borderHighlight = "#d79921";
+    QString m_accent = "#d79921";
+    QString m_selection = "#504945";
+    QString m_player = "#1d2021";
+    QString m_lyricsCurrent = "#fabd2f";
+    QString m_lyricsPrevious = "#a89984";
+    QString m_lyricsInactive = "#665c54";
+    QString m_statusSuccess = "#b8bb26";
+    QString m_statusWarning = "#fabd2f";
+    QString m_statusError = "#fb4934";
+    QString m_orange = "#fe8019";
     int m_radius = 2;
-
-    QFileSystemWatcher m_watcher;
-    QTimer m_debounce;
 };
-
