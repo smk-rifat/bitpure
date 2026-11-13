@@ -20,6 +20,59 @@ ApplicationWindow {
         id: localBackend
     }
 
+    Item {
+        focus: true
+        Keys.onPressed: (event) => {
+            if (event.key === Qt.Key_Space) {
+                if (localBackend.isPlaying) localBackend.pause();
+                else if (localBackend.tracks.length > 0) {
+                    var trk = (localBackend.playQueue.length > 0) ? localBackend.playQueue[0] : localBackend.tracks[0];
+                    localBackend.playTrack(trk.file_path, trk.title, trk.track_artist);
+                }
+                event.accepted = true;
+            } else if (event.key === Qt.Key_N) {
+                if (event.modifiers & Qt.ShiftModifier) {
+                    localBackend.previousTrack();
+                } else {
+                    localBackend.nextTrack();
+                }
+                event.accepted = true;
+            } else if (event.key === Qt.Key_S) {
+                localBackend.cycleShuffleMode();
+                event.accepted = true;
+            } else if (event.key === Qt.Key_R) {
+                localBackend.cycleRepeatMode();
+                event.accepted = true;
+            } else if (event.key === Qt.Key_P) {
+                localBackend.isBitPerfect = !localBackend.isBitPerfect;
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Z) {
+                localBackend.volume = Math.max(0.0, localBackend.volume - 0.05);
+                event.accepted = true;
+            } else if (event.key === Qt.Key_X) {
+                localBackend.volume = Math.min(1.0, localBackend.volume + 0.05);
+                event.accepted = true;
+            } else if (event.key === Qt.Key_C) {
+                localBackend.seekTo(Math.max(0, localBackend.positionMs - 5000));
+                event.accepted = true;
+            } else if (event.key === Qt.Key_V) {
+                localBackend.seekTo(Math.min(localBackend.durationMs, localBackend.positionMs + 5000));
+                event.accepted = true;
+            } else if (event.key >= Qt.Key_1 && event.key <= Qt.Key_7) {
+                var tabs = ["queue", "liked", "playlists", "albums", "artists", "all", "settings"];
+                var idx = event.key - Qt.Key_1;
+                if (idx < tabs.length) currentTab = tabs[idx];
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Menu || event.key === Qt.Key_F10) {
+                if (localBackend.tracks.length > 0) {
+                    var idx = (trackTable && trackTable.currentIndex >= 0) ? trackTable.currentIndex : 2;
+                    contextMenu.openMenu(localBackend.tracks[idx], 350, 200, root.contentItem);
+                }
+                event.accepted = true;
+            }
+        }
+    }
+
     property string currentTab: "queue" // queue, albums, artists, dopamine, settings
     property int currentSortIndex: 6
     property string activeSearchQuery: ""
@@ -48,35 +101,54 @@ ApplicationWindow {
                 anchors.rightMargin: 14
                 spacing: 16
 
-                // LEFT: [Playing/Stopped] + 0:00 / 0:00
+                // LEFT: Transport controls (Prev, Play/Pause, Next, Shuffle, Repeat) + Time & State
                 ColumnLayout {
-                    Layout.preferredWidth: 140
-                    spacing: 2
+                    Layout.preferredWidth: 310
+                    spacing: 3
 
+                    // Row 1: Prev | Play/Pause | Next | Shuffle | Repeat
                     RowLayout {
-                        spacing: 6
-                        Text {
-                            text: localBackend.isPlaying ? "[Playing]" : "[Stopped]"
-                            color: localBackend.isPlaying ? localTheme.green : localTheme.orange
-                            font.bold: true
-                            font.pixelSize: 12
-                            font.family: "monospace"
-                        }
+                        spacing: 5
 
-                        // Play/Pause clickable icon
+                        // Prev
                         Rectangle {
-                            width: 18
-                            height: 18
-                            radius: localTheme.radius
-                            color: "transparent"
+                            width: 22
+                            height: 22
+                            radius: 2
+                            color: prevBtnMouse.containsMouse ? localTheme.surfaceLighter : "transparent"
                             border.color: localTheme.border
                             border.width: 1
 
                             Text {
                                 anchors.centerIn: parent
-                                text: localBackend.isPlaying ? "⏸" : "▶"
+                                text: "⏮"
                                 color: localTheme.foreground
                                 font.pixelSize: 9
+                            }
+
+                            MouseArea {
+                                id: prevBtnMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: localBackend.previousTrack()
+                            }
+                        }
+
+                        // Play/Pause
+                        Rectangle {
+                            width: 26
+                            height: 22
+                            radius: 2
+                            color: localTheme.darkBackground
+                            border.color: localTheme.accent
+                            border.width: 1
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: localBackend.isPlaying ? "⏸" : "▶"
+                                color: localTheme.accent
+                                font.pixelSize: 10
                             }
 
                             MouseArea {
@@ -86,19 +158,109 @@ ApplicationWindow {
                                     if (localBackend.isPlaying) {
                                         localBackend.pause();
                                     } else if (localBackend.tracks.length > 0) {
-                                        var trk = localBackend.tracks[0];
+                                        var trk = (localBackend.playQueue.length > 0) ? localBackend.playQueue[0] : localBackend.tracks[0];
                                         localBackend.playTrack(trk.file_path, trk.title, trk.track_artist);
                                     }
                                 }
                             }
                         }
+
+                        // Next
+                        Rectangle {
+                            width: 22
+                            height: 22
+                            radius: 2
+                            color: nextBtnMouse.containsMouse ? localTheme.surfaceLighter : "transparent"
+                            border.color: localTheme.border
+                            border.width: 1
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: "⏭"
+                                color: localTheme.foreground
+                                font.pixelSize: 9
+                            }
+
+                            MouseArea {
+                                id: nextBtnMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: localBackend.nextTrack()
+                            }
+                        }
+
+                        // Shuffle Pill
+                        Rectangle {
+                            height: 22
+                            width: shufText.implicitWidth + 12
+                            radius: 2
+                            color: localBackend.shuffleMode === 2 ? localTheme.accent : (localBackend.shuffleMode === 1 ? localTheme.darkBackground : "transparent")
+                            border.color: localBackend.shuffleMode > 0 ? localTheme.accent : localTheme.border
+                            border.width: 1
+
+                            Text {
+                                id: shufText
+                                anchors.centerIn: parent
+                                text: localBackend.shuffleMode === 2 ? "✨ Smart" : (localBackend.shuffleMode === 1 ? "🔀 Normal" : "→ Order")
+                                color: localBackend.shuffleMode === 2 ? localTheme.background : (localBackend.shuffleMode === 1 ? localTheme.accent : localTheme.muted)
+                                font.bold: localBackend.shuffleMode > 0
+                                font.pixelSize: 9
+                                font.family: "monospace"
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: localBackend.cycleShuffleMode()
+                            }
+                        }
+
+                        // Repeat Pill
+                        Rectangle {
+                            height: 22
+                            width: repText.implicitWidth + 12
+                            radius: 2
+                            color: localBackend.repeatMode > 0 ? localTheme.darkBackground : "transparent"
+                            border.color: localBackend.repeatMode > 0 ? localTheme.green : localTheme.border
+                            border.width: 1
+
+                            Text {
+                                id: repText
+                                anchors.centerIn: parent
+                                text: localBackend.repeatMode === 2 ? "🔂 One" : (localBackend.repeatMode === 1 ? "🔁 All" : "Off")
+                                color: localBackend.repeatMode > 0 ? localTheme.green : localTheme.muted
+                                font.bold: localBackend.repeatMode > 0
+                                font.pixelSize: 9
+                                font.family: "monospace"
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: localBackend.cycleRepeatMode()
+                            }
+                        }
                     }
 
-                    Text {
-                        text: (localBackend.positionStr.length > 0 ? localBackend.positionStr : "0:00") + " / " + (localBackend.durationStr.length > 0 ? localBackend.durationStr : "0:00")
-                        color: localTheme.foreground
-                        font.pixelSize: 11
-                        font.family: "monospace"
+                    // Row 2: Status & Time readout
+                    RowLayout {
+                        spacing: 6
+
+                        Text {
+                            text: localBackend.isPlaying ? "[Playing]" : "[Stopped]"
+                            color: localBackend.isPlaying ? localTheme.green : localTheme.orange
+                            font.bold: true
+                            font.pixelSize: 10
+                            font.family: "monospace"
+                        }
+
+                        Text {
+                            text: (localBackend.positionStr.length > 0 ? localBackend.positionStr : "0:00") + " / " + (localBackend.durationStr.length > 0 ? localBackend.durationStr : "0:00")
+                            color: localTheme.foreground
+                            font.pixelSize: 10
+                            font.family: "monospace"
+                        }
                     }
                 }
 
@@ -350,16 +512,17 @@ ApplicationWindow {
             Repeater {
                 model: [
                     { id: "queue", label: "Queue" },
+                    { id: "liked", label: "♥ Liked" },
+                    { id: "playlists", label: "Playlists" },
                     { id: "albums", label: "Albums" },
                     { id: "artists", label: "Artists" },
-                    { id: "dopamine", label: "Dopamine Hits" },
                     { id: "all", label: "All Songs" },
                     { id: "settings", label: "Settings" }
                 ]
 
                 Rectangle {
                     Layout.preferredHeight: 26
-                    Layout.preferredWidth: tabText.implicitWidth + 24
+                    Layout.preferredWidth: tabText.implicitWidth + 20
                     radius: localTheme.radius
                     color: currentTab === modelData.id ? localTheme.accent : (tabMouse.containsMouse ? localTheme.surfaceLighter : "transparent")
                     border.color: currentTab === modelData.id ? localTheme.accent : localTheme.border
@@ -382,9 +545,7 @@ ApplicationWindow {
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
                             currentTab = modelData.id;
-                            if (modelData.id === "dopamine") {
-                                localBackend.setSortCriteria(6);
-                            } else if (modelData.id === "all") {
+                            if (modelData.id === "all") {
                                 localBackend.setSortCriteria(0);
                             }
                         }
@@ -597,12 +758,126 @@ ApplicationWindow {
                 border.width: 1
                 radius: localTheme.radius
 
-                // A. TRACK TABLE VIEW (Used for Queue, Dopamine Hits, All Songs)
+                // A. TRACK TABLE VIEW (Used for Queue, Liked, Playlists, Artists, All Songs)
                 ColumnLayout {
                     anchors.fill: parent
                     anchors.margins: 10
                     spacing: 6
-                    visible: currentTab === "queue" || currentTab === "dopamine" || currentTab === "all" || currentTab === "artists"
+                    visible: currentTab === "queue" || currentTab === "liked" || currentTab === "playlists" || currentTab === "all" || currentTab === "artists"
+
+                    // SUB-HEADER BAR FOR PLAYLISTS / QUEUE / LIKED
+                    RowLayout {
+                        visible: currentTab === "playlists" || currentTab === "liked" || (currentTab === "queue" && localBackend.playQueue.length > 0)
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        // Playlists Sub-row
+                        RowLayout {
+                            visible: currentTab === "playlists"
+                            Layout.fillWidth: true
+                            spacing: 6
+
+                            Text {
+                                text: "Playlists:"
+                                color: localTheme.muted
+                                font.pixelSize: 10
+                                font.family: "monospace"
+                            }
+
+                            Repeater {
+                                model: localBackend.playlistNames
+                                Rectangle {
+                                    height: 22
+                                    width: plPillText.implicitWidth + 14
+                                    radius: 2
+                                    color: localBackend.activePlaylistName === modelData ? localTheme.accent : localTheme.darkBackground
+                                    border.color: localBackend.activePlaylistName === modelData ? localTheme.accent : localTheme.border
+                                    border.width: 1
+
+                                    Text {
+                                        id: plPillText
+                                        anchors.centerIn: parent
+                                        text: modelData
+                                        color: localBackend.activePlaylistName === modelData ? localTheme.background : localTheme.foreground
+                                        font.bold: localBackend.activePlaylistName === modelData
+                                        font.pixelSize: 9
+                                        font.family: "monospace"
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: localBackend.setActivePlaylistName(modelData)
+                                    }
+                                }
+                            }
+
+                            Item { Layout.fillWidth: true }
+
+                            Rectangle {
+                                height: 22
+                                width: 95
+                                radius: 2
+                                color: localTheme.darkBackground
+                                border.color: localTheme.accent
+                                border.width: 1
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: "+ New Playlist"
+                                    color: localTheme.accent
+                                    font.pixelSize: 9
+                                    font.family: "monospace"
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: newPlaylistDialog.open()
+                                }
+                            }
+                        }
+
+                        // Liked Sub-row
+                        RowLayout {
+                            visible: currentTab === "liked"
+                            Layout.fillWidth: true
+                            spacing: 6
+                            Text {
+                                text: "♥ Liked Songs (" + localBackend.likedTracks.length + ") — Smart Shuffle prioritizes these tracks"
+                                color: localTheme.red
+                                font.bold: true
+                                font.pixelSize: 10
+                                font.family: "monospace"
+                            }
+                        }
+
+                        // Queue Sub-row
+                        RowLayout {
+                            visible: currentTab === "queue" && localBackend.playQueue.length > 0
+                            Layout.fillWidth: true
+                            spacing: 8
+                            Text {
+                                text: "Upcoming Queue (" + localBackend.playQueue.length + " tracks)"
+                                color: localTheme.green
+                                font.bold: true
+                                font.pixelSize: 10
+                                font.family: "monospace"
+                            }
+                            Item { Layout.fillWidth: true }
+                            Rectangle {
+                                height: 20
+                                width: 75
+                                radius: 2
+                                color: localTheme.darkBackground
+                                border.color: localTheme.border
+                                border.width: 1
+                                Text { anchors.centerIn: parent; text: "Clear Queue"; color: localTheme.muted; font.pixelSize: 9; font.family: "monospace" }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: localBackend.clearQueue()
+                                }
+                            }
+                        }
+                    }
 
                     // TABLE HEADER BAR
                     Rectangle {
@@ -617,9 +892,17 @@ ApplicationWindow {
                             anchors.fill: parent
                             anchors.leftMargin: 10
                             anchors.rightMargin: 10
+                            spacing: 8
 
                             Text {
-                                Layout.preferredWidth: 200
+                                Layout.preferredWidth: 20
+                                text: "♥"
+                                color: localTheme.muted
+                                font.pixelSize: 10
+                                font.family: "monospace"
+                            }
+                            Text {
+                                Layout.preferredWidth: 180
                                 text: "Artist"
                                 color: localTheme.muted
                                 font.bold: true
@@ -635,7 +918,7 @@ ApplicationWindow {
                                 font.family: "monospace"
                             }
                             Text {
-                                Layout.preferredWidth: 200
+                                Layout.preferredWidth: 180
                                 text: "Album"
                                 color: localTheme.muted
                                 font.bold: true
@@ -660,7 +943,12 @@ ApplicationWindow {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
-                        model: localBackend.tracks
+                        model: {
+                            if (currentTab === "liked") return localBackend.likedTracks;
+                            if (currentTab === "playlists") return localBackend.activePlaylistTracks;
+                            if (currentTab === "queue" && localBackend.playQueue.length > 0) return localBackend.playQueue;
+                            return localBackend.tracks;
+                        }
 
                         delegate: Rectangle {
                             width: trackTable.width
@@ -669,14 +957,31 @@ ApplicationWindow {
                             color: isCurrentTrack ? localTheme.selection : (rowMouse.containsMouse ? localTheme.surfaceLighter : "transparent")
 
                             property bool isCurrentTrack: localBackend.isPlaying && localBackend.nowPlayingTitle === modelData.title
+                            property bool isLiked: localBackend.isTrackLiked(modelData.file_path)
 
                             RowLayout {
                                 anchors.fill: parent
                                 anchors.leftMargin: 10
                                 anchors.rightMargin: 10
+                                spacing: 8
+
+                                // Heart Icon toggle
+                                Text {
+                                    Layout.preferredWidth: 20
+                                    text: isLiked ? "♥" : "♡"
+                                    color: isLiked ? localTheme.red : localTheme.muted
+                                    font.pixelSize: 11
+                                    font.family: "monospace"
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: localBackend.toggleLikeTrack(modelData.file_path)
+                                    }
+                                }
 
                                 Text {
-                                    Layout.preferredWidth: 200
+                                    Layout.preferredWidth: 180
                                     text: modelData.track_artist
                                     color: isCurrentTrack ? localTheme.accent : localTheme.foreground
                                     font.pixelSize: 11
@@ -707,7 +1012,7 @@ ApplicationWindow {
                                 }
 
                                 Text {
-                                    Layout.preferredWidth: 200
+                                    Layout.preferredWidth: 180
                                     text: "Lossless FLAC"
                                     color: localTheme.muted
                                     font.pixelSize: 11
@@ -728,9 +1033,16 @@ ApplicationWindow {
                             MouseArea {
                                 id: rowMouse
                                 anchors.fill: parent
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: localBackend.playTrack(modelData.file_path, modelData.title, modelData.track_artist)
+                                onClicked: (mouse) => {
+                                    if (mouse.button === Qt.RightButton) {
+                                        contextMenu.openMenu(modelData, mouse.x, mouse.y, rowMouse);
+                                    } else {
+                                        localBackend.playTrack(modelData.file_path, modelData.title, modelData.track_artist);
+                                    }
+                                }
                             }
                         }
                     }
@@ -1008,8 +1320,8 @@ ApplicationWindow {
                                     }
                                 }
 
-                                // Preset pills
-                                RowLayout {
+                                // Preset pills and Reset button
+                                Flow {
                                     Layout.fillWidth: true
                                     spacing: 6
 
@@ -1018,9 +1330,9 @@ ApplicationWindow {
                                     Repeater {
                                         model: parent.presets
                                         delegate: Rectangle {
-                                            property bool isActive: localBackend.activeEqPreset === modelData
-                                            Layout.preferredWidth: pLabel.implicitWidth + 16
-                                            Layout.preferredHeight: 22
+                                            property bool isActive: localBackend.activeEqPreset === index
+                                            width: pLabel.implicitWidth + 16
+                                            height: 22
                                             color: isActive ? localTheme.accent : localTheme.darkBackground
                                             border.color: isActive ? localTheme.accent : localTheme.border
                                             border.width: 1
@@ -1036,9 +1348,60 @@ ApplicationWindow {
                                             MouseArea {
                                                 anchors.fill: parent
                                                 cursorShape: Qt.PointingHandCursor
-                                                onClicked: localBackend.setActiveEqPreset(modelData)
+                                                onClicked: localBackend.setActiveEqPreset(index)
                                             }
                                         }
+                                    }
+
+                                    // Reset 0dB Pill
+                                    Rectangle {
+                                        width: resetLabel.implicitWidth + 14
+                                        height: 22
+                                        color: localTheme.darkBackground
+                                        border.color: localTheme.border
+                                        border.width: 1
+                                        radius: 2
+                                        Text {
+                                            id: resetLabel
+                                            anchors.centerIn: parent
+                                            text: "↺ Reset 0dB"
+                                            color: localTheme.muted
+                                            font.pixelSize: 9
+                                            font.family: "monospace"
+                                        }
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: localBackend.resetEq()
+                                        }
+                                    }
+                                }
+
+                                // Preamp Gain Slider
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 8
+                                    Text {
+                                        text: "Preamp Gain:"
+                                        color: localTheme.foreground
+                                        font.pixelSize: 10
+                                        font.family: "monospace"
+                                    }
+                                    Slider {
+                                        id: preampSlider
+                                        Layout.fillWidth: true
+                                        from: -12
+                                        to: 12
+                                        stepSize: 0.5
+                                        value: localBackend.preamp
+                                        onMoved: localBackend.preamp = value
+                                    }
+                                    Text {
+                                        Layout.preferredWidth: 45
+                                        text: (localBackend.preamp > 0 ? "+" : "") + localBackend.preamp.toFixed(1) + " dB"
+                                        color: localBackend.preamp > 0 ? localTheme.green : (localBackend.preamp < 0 ? localTheme.red : localTheme.muted)
+                                        font.pixelSize: 9
+                                        font.family: "monospace"
                                     }
                                 }
 
@@ -1418,6 +1781,535 @@ ApplicationWindow {
                 color: localTheme.muted
                 font.pixelSize: 10
                 font.family: "monospace"
+            }
+        }
+    }
+
+
+    // =========================================================================
+    // POPUPS & DIALOGS: Context Menu, Playlist Picker, Confirm Deletion Modal
+    // =========================================================================
+
+    // 1. Right-Click Context Menu
+    Popup {
+        id: contextMenu
+        width: 220
+        padding: 6
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle {
+            color: localTheme.darkBackground
+            border.color: localTheme.accent
+            border.width: 1
+            radius: 2
+        }
+
+        property var targetTrack: null
+
+        function openMenu(track, mouseX, mouseY, sourceItem) {
+            targetTrack = track;
+            var pos = sourceItem.mapToItem(root.contentItem, mouseX, mouseY);
+            x = Math.max(10, Math.min(pos.x, root.width - width - 10));
+            y = Math.max(10, Math.min(pos.y, root.height - implicitHeight - 10));
+            open();
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 3
+
+            // Track Header
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 22
+                color: localTheme.surface
+                radius: 2
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 6
+                    Text {
+                        Layout.fillWidth: true
+                        text: contextMenu.targetTrack ? (contextMenu.targetTrack.title + " — " + contextMenu.targetTrack.track_artist) : ""
+                        color: localTheme.accent
+                        font.bold: true
+                        font.pixelSize: 9
+                        font.family: "monospace"
+                        elide: Text.ElideRight
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; height: 1; color: localTheme.border }
+
+            // Liked Song Toggle
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 24
+                color: likeHover.containsMouse ? localTheme.surface : "transparent"
+                radius: 2
+                RowLayout {
+                    anchors.fill: parent; anchors.leftMargin: 6; spacing: 6
+                    Text {
+                        text: (contextMenu.targetTrack && localBackend.isTrackLiked(contextMenu.targetTrack.file_path)) ? "♥" : "♡"
+                        color: localTheme.red
+                        font.pixelSize: 11
+                    }
+                    Text {
+                        text: (contextMenu.targetTrack && localBackend.isTrackLiked(contextMenu.targetTrack.file_path)) ? "Remove from Liked" : "Add to Liked Songs"
+                        color: localTheme.foreground
+                        font.pixelSize: 10
+                        font.family: "monospace"
+                    }
+                }
+                MouseArea {
+                    id: likeHover
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (contextMenu.targetTrack) {
+                            localBackend.toggleLikeTrack(contextMenu.targetTrack.file_path);
+                        }
+                        contextMenu.close();
+                    }
+                }
+            }
+
+            // Add to Queue
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 24
+                color: queueHover.containsMouse ? localTheme.surface : "transparent"
+                radius: 2
+                RowLayout {
+                    anchors.fill: parent; anchors.leftMargin: 6; spacing: 6
+                    Text { text: "+"; color: localTheme.green; font.pixelSize: 11; font.family: "monospace" }
+                    Text { text: "Add to Queue"; color: localTheme.foreground; font.pixelSize: 10; font.family: "monospace" }
+                }
+                MouseArea {
+                    id: queueHover
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (contextMenu.targetTrack) {
+                            localBackend.addToQueue(contextMenu.targetTrack.file_path);
+                        }
+                        contextMenu.close();
+                    }
+                }
+            }
+
+            // Add to Playlist
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 24
+                color: plHover.containsMouse ? localTheme.surface : "transparent"
+                radius: 2
+                RowLayout {
+                    anchors.fill: parent; anchors.leftMargin: 6; anchors.rightMargin: 6; spacing: 6
+                    Text { text: "📁"; font.pixelSize: 10 }
+                    Text { text: "Add to Playlist"; color: localTheme.foreground; font.pixelSize: 10; font.family: "monospace" }
+                    Item { Layout.fillWidth: true }
+                    Text { text: "▸"; color: localTheme.muted; font.pixelSize: 10 }
+                }
+                MouseArea {
+                    id: plHover
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        playlistPickerPopup.openPicker(contextMenu.targetTrack, contextMenu.x + contextMenu.width + 4, contextMenu.y);
+                        contextMenu.close();
+                    }
+                }
+            }
+
+            // Delete from Playlist (visible on playlists tab)
+            Rectangle {
+                visible: currentTab === "playlists"
+                Layout.fillWidth: true
+                Layout.preferredHeight: 24
+                color: delPlHover.containsMouse ? localTheme.surface : "transparent"
+                radius: 2
+                RowLayout {
+                    anchors.fill: parent; anchors.leftMargin: 6; spacing: 6
+                    Text { text: "−"; color: localTheme.orange; font.bold: true; font.pixelSize: 11; font.family: "monospace" }
+                    Text { text: "Delete from Playlist"; color: localTheme.orange; font.pixelSize: 10; font.family: "monospace" }
+                }
+                MouseArea {
+                    id: delPlHover
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        if (contextMenu.targetTrack && localBackend.activePlaylistName !== "") {
+                            localBackend.removeFromPlaylist(localBackend.activePlaylistName, contextMenu.targetTrack.file_path);
+                        }
+                        contextMenu.close();
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; height: 1; color: localTheme.border }
+
+            // Delete Permanently from Storage
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 24
+                color: delStorageHover.containsMouse ? localTheme.red : "transparent"
+                radius: 2
+                RowLayout {
+                    anchors.fill: parent; anchors.leftMargin: 6; spacing: 6
+                    Text { text: "🗑"; font.pixelSize: 10 }
+                    Text {
+                        text: "Delete permanently"
+                        color: delStorageHover.containsMouse ? localTheme.background : localTheme.red
+                        font.bold: true
+                        font.pixelSize: 10
+                        font.family: "monospace"
+                    }
+                }
+                MouseArea {
+                    id: delStorageHover
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        var trk = contextMenu.targetTrack;
+                        contextMenu.close();
+                        if (trk) {
+                            confirmDeleteDialog.openConfirmation(trk);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Playlist Picker Popup
+    Popup {
+        id: playlistPickerPopup
+        width: 190
+        padding: 6
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle {
+            color: localTheme.darkBackground
+            border.color: localTheme.accent
+            border.width: 1
+            radius: 2
+        }
+
+        property var targetTrack: null
+
+        function openPicker(track, posX, posY) {
+            targetTrack = track;
+            x = Math.max(10, Math.min(posX, root.width - width - 10));
+            y = Math.max(10, Math.min(posY, root.height - implicitHeight - 10));
+            open();
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 4
+
+            Text {
+                text: "ADD TO PLAYLIST:"
+                color: localTheme.muted
+                font.bold: true
+                font.pixelSize: 9
+                font.family: "monospace"
+            }
+
+            Repeater {
+                model: localBackend.playlistNames
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 22
+                    color: plItemMouse.containsMouse ? localTheme.surface : "transparent"
+                    radius: 2
+                    RowLayout {
+                        anchors.fill: parent; anchors.leftMargin: 6; spacing: 6
+                        Text { text: "•"; color: localTheme.accent; font.pixelSize: 10 }
+                        Text { text: modelData; color: localTheme.foreground; font.pixelSize: 10; font.family: "monospace"; elide: Text.ElideRight }
+                    }
+                    MouseArea {
+                        id: plItemMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (playlistPickerPopup.targetTrack) {
+                                localBackend.addToPlaylist(modelData, playlistPickerPopup.targetTrack.file_path);
+                            }
+                            playlistPickerPopup.close();
+                        }
+                    }
+                }
+            }
+
+            Rectangle { Layout.fillWidth: true; height: 1; color: localTheme.border }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 22
+                    color: localTheme.surface
+                    border.color: localTheme.border
+                    border.width: 1
+                    radius: 2
+                    TextInput {
+                        id: quickPlInput
+                        anchors.fill: parent
+                        anchors.margins: 4
+                        color: localTheme.foreground
+                        font.pixelSize: 9
+                        font.family: "monospace"
+                    }
+                    Text {
+                        anchors.centerIn: parent
+                        text: "New playlist…"
+                        color: localTheme.muted
+                        font.pixelSize: 9
+                        font.family: "monospace"
+                        visible: quickPlInput.text === ""
+                    }
+                }
+                Rectangle {
+                    Layout.preferredWidth: 36
+                    Layout.preferredHeight: 22
+                    color: localTheme.darkBackground
+                    border.color: localTheme.accent
+                    border.width: 1
+                    radius: 2
+                    Text { anchors.centerIn: parent; text: "Add"; color: localTheme.accent; font.pixelSize: 9; font.family: "monospace" }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (quickPlInput.text.trim() !== "") {
+                                var plName = quickPlInput.text.trim();
+                                localBackend.createPlaylist(plName);
+                                if (playlistPickerPopup.targetTrack) {
+                                    localBackend.addToPlaylist(plName, playlistPickerPopup.targetTrack.file_path);
+                                }
+                                quickPlInput.text = "";
+                                playlistPickerPopup.close();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Confirm Permanent File Deletion Modal
+    Popup {
+        id: confirmDeleteDialog
+        anchors.centerIn: parent
+        width: 440
+        padding: 16
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape
+        background: Rectangle {
+            color: localTheme.darkBackground
+            border.color: localTheme.red
+            border.width: 2
+            radius: 4
+        }
+
+        property var trackToDelete: null
+
+        function openConfirmation(track) {
+            trackToDelete = track;
+            open();
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 12
+
+            RowLayout {
+                spacing: 8
+                Text { text: "⚠️"; font.pixelSize: 16 }
+                Text {
+                    text: "PERMANENT FILE DELETION"
+                    color: localTheme.red
+                    font.bold: true
+                    font.pixelSize: 12
+                    font.family: "monospace"
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: "Are you sure you want to permanently delete this track from your storage drive? This action CANNOT be undone."
+                color: localTheme.foreground
+                font.pixelSize: 10
+                font.family: "monospace"
+                wrapMode: Text.Wrap
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: colTrkInfo.implicitHeight + 12
+                color: localTheme.surface
+                border.color: localTheme.border
+                border.width: 1
+                radius: 2
+
+                ColumnLayout {
+                    id: colTrkInfo
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 4
+
+                    Text {
+                        text: confirmDeleteDialog.trackToDelete ? (confirmDeleteDialog.trackToDelete.title + " — " + confirmDeleteDialog.trackToDelete.track_artist) : ""
+                        color: localTheme.yellow
+                        font.bold: true
+                        font.pixelSize: 11
+                        font.family: "monospace"
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: confirmDeleteDialog.trackToDelete ? confirmDeleteDialog.trackToDelete.file_path : ""
+                        color: localTheme.muted
+                        font.pixelSize: 9
+                        font.family: "monospace"
+                        elide: Text.ElideMiddle
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignRight
+                spacing: 10
+
+                Rectangle {
+                    Layout.preferredWidth: 80
+                    Layout.preferredHeight: 26
+                    color: localTheme.surface
+                    border.color: localTheme.border
+                    border.width: 1
+                    radius: 2
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Cancel"
+                        color: localTheme.foreground
+                        font.pixelSize: 10
+                        font.family: "monospace"
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: confirmDeleteDialog.close()
+                    }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 150
+                    Layout.preferredHeight: 26
+                    color: localTheme.red
+                    radius: 2
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Delete Permanently"
+                        color: localTheme.background
+                        font.bold: true
+                        font.pixelSize: 10
+                        font.family: "monospace"
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (confirmDeleteDialog.trackToDelete) {
+                                localBackend.deleteTrackFromStorage(confirmDeleteDialog.trackToDelete.file_path);
+                            }
+                            confirmDeleteDialog.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Create New Playlist Dialog
+    Popup {
+        id: newPlaylistDialog
+        anchors.centerIn: parent
+        width: 280
+        padding: 12
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape
+        background: Rectangle {
+            color: localTheme.darkBackground
+            border.color: localTheme.accent
+            border.width: 1
+            radius: 2
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 8
+            Text {
+                text: "Create New Playlist"
+                color: localTheme.foreground
+                font.bold: true
+                font.pixelSize: 11
+                font.family: "monospace"
+            }
+            Rectangle {
+                Layout.fillWidth: true
+                height: 26
+                color: localTheme.surface
+                border.color: localTheme.border
+                border.width: 1
+                radius: 2
+                TextInput {
+                    id: newPlDialogInput
+                    anchors.fill: parent
+                    anchors.margins: 6
+                    color: localTheme.foreground
+                    font.pixelSize: 10
+                    font.family: "monospace"
+                }
+                Text {
+                    anchors.centerIn: parent
+                    text: "Playlist name…"
+                    color: localTheme.muted
+                    font.pixelSize: 10
+                    font.family: "monospace"
+                    visible: newPlDialogInput.text === ""
+                }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignRight
+                spacing: 6
+                Rectangle {
+                    width: 60; height: 24; color: localTheme.surface; border.color: localTheme.border; border.width: 1; radius: 2
+                    Text { anchors.centerIn: parent; text: "Cancel"; color: localTheme.foreground; font.pixelSize: 9; font.family: "monospace" }
+                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: newPlaylistDialog.close() }
+                }
+                Rectangle {
+                    width: 60; height: 24; color: localTheme.accent; radius: 2
+                    Text { anchors.centerIn: parent; text: "Create"; color: localTheme.background; font.bold: true; font.pixelSize: 9; font.family: "monospace" }
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            if (newPlDialogInput.text.trim() !== "") {
+                                localBackend.createPlaylist(newPlDialogInput.text.trim());
+                                newPlDialogInput.text = "";
+                                newPlaylistDialog.close();
+                            }
+                        }
+                    }
+                }
             }
         }
     }

@@ -14,6 +14,9 @@
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QNetworkReply>
+#include <QRandomGenerator>
+#include <QSet>
+#include <QVector>
 #include <QDebug>
 
 extern "C" {
@@ -38,6 +41,8 @@ Backend::Backend(QObject *parent) : QObject(parent) {
     audioplayer_init(nullptr);
     initMpv();
     loadCustomPresets();
+    loadLikedTracks();
+    loadPlaylists();
     scanFolder(m_musicFolder);
     watchFolder(m_musicFolder);
     refreshDevices();
@@ -46,6 +51,9 @@ Backend::Backend(QObject *parent) : QObject(parent) {
 }
 
 Backend::~Backend() {
+    persistCustomPresets();
+    persistLikedTracks();
+    persistPlaylists();
     if (m_mpvSocket) {
         sendMpvCommand("{\"command\": [\"quit\"]}\n");
         m_mpvSocket->disconnectFromServer();
@@ -103,6 +111,17 @@ void Backend::onMpvSocketReadyRead() {
         if (!doc.isObject()) continue;
         QJsonObject obj = doc.object();
 
+        // Detect track ending naturally -> auto-advance
+        if (obj.contains("event")) {
+            QString eventName = obj["event"].toString();
+            if (eventName == "end-file") {
+                QString reason = obj.value("reason").toString();
+                if (reason == "eof") {
+                    QTimer::singleShot(50, this, &Backend::nextTrack);
+                }
+            }
+        }
+
         int reqId = obj.value("request_id").toInt(-1);
         if (reqId == 1 && obj.contains("data") && obj["data"].isDouble()) {
             qint64 posMs = (qint64)(obj["data"].toDouble() * 1000.0);
@@ -158,10 +177,8 @@ void Backend::seekTo(qint64 ms) {
 }
 
 void Backend::seekFraction(float fraction) {
-    float clamped = qBound(0.0f, fraction, 1.0f);
     if (m_durationMs > 0) {
-        qint64 targetMs = (qint64)(clamped * (float)m_durationMs);
-        seekTo(targetMs);
+        seekTo((qint64)(m_durationMs * fraction));
     }
 }
 
@@ -170,12 +187,10 @@ void Backend::watchFolder(const QString &folderPath) {
 }
 
 void Backend::setMusicFolder(const QString &folderPath) {
-    if (m_musicFolder != folderPath) {
-        m_musicFolder = folderPath;
-        scanFolder(folderPath);
-        watchFolder(folderPath);
-        emit musicFolderChanged();
-    }
+    m_musicFolder = folderPath;
+    emit musicFolderChanged();
+    scanFolder(folderPath);
+    watchFolder(folderPath);
 }
 
 void Backend::setActiveEqPreset(int preset) {
@@ -208,6 +223,21 @@ void Backend::setEqBand(int band, float gainDb) {
     }
 }
 
+void Backend::setPreamp(float db) {
+    m_preamp = db;
+    emit eqChanged();
+}
+
+void Backend::resetEq() {
+    for (int i = 0; i < 10; ++i) {
+        m_eqGains[i] = 0.0f;
+        audioplayer_set_eq_band(i, 0.0f);
+    }
+    m_preamp = 0.0f;
+    m_activeEqPreset = 0; // Flat
+    emit eqChanged();
+}
+
 QVariantList Backend::eqGains() const {
     QVariantList list;
     for (int i = 0; i < 10; ++i) {
@@ -221,7 +251,6 @@ void Backend::fetchRecommendations(const QString &artist) {
     if (recs_c) {
         QJsonDocument doc = QJsonDocument::fromJson(recs_c);
         audioplayer_free_string(recs_c);
-
         if (doc.isArray()) {
             m_recommendations.clear();
             for (const auto &val : doc.array()) {
@@ -233,78 +262,78 @@ void Backend::fetchRecommendations(const QString &artist) {
 }
 
 void Backend::refreshDevices() {
-    char *json_c = audioplayer_get_devices_json();
-    if (json_c) {
-        QJsonDocument doc = QJsonDocument::fromJson(json_c);
-        audioplayer_free_string(json_c);
-
+    char *devs_c = audioplayer_get_devices_json();
+    if (devs_c) {
+        QJsonDocument doc = QJsonDocument::fromJson(devs_c);
+        audioplayer_free_string(devs_c);
         if (doc.isArray()) {
             m_devices.clear();
-            QJsonArray arr = doc.array();
-            for (const auto &val : arr) {
+            for (const auto &val : doc.array()) {
                 m_devices.append(val.toObject().toVariantMap());
             }
-            if (!m_devices.isEmpty() && (m_activeDeviceId.isEmpty() || m_activeDeviceId == "hw:1,0")) {
-                m_activeDeviceId = m_devices.first().toMap()["id"].toString();
-                audioplayer_set_device(m_activeDeviceId.toUtf8().constData());
-            }
             emit devicesChanged();
-            emit deviceChanged();
-            emit signalPathChanged();
+
+            // Auto-select USB DAC if found
+            for (const auto &d : m_devices) {
+                QVariantMap m = d.toMap();
+                if (m.value("is_usb_dac").toBool()) {
+                    setActiveDeviceId(m.value("id").toString());
+                    break;
+                }
+            }
         }
     }
 }
 
 void Backend::setBitPerfect(bool enabled) {
-    if (m_isBitPerfect != enabled) {
-        m_isBitPerfect = enabled;
-        audioplayer_set_bit_perfect(enabled ? 1 : 0);
-        if (enabled) {
-            m_volume = 1.0f;
-            QProcess::startDetached("wpctl", QStringList() << "set-volume" << "@DEFAULT_AUDIO_SINK@" << "1.0");
-            m_signalPathInfo = QString("[Bit-Perfect Pure Mode: %1 (Direct DAC 0dB)]").arg(m_activeDeviceId);
-        } else {
-            m_signalPathInfo = QString("[Audited DSP Mode: %1 (Software Volume & EQ Active)]").arg(m_activeDeviceId);
-        }
-        emit bitPerfectChanged();
-        emit signalPathChanged();
-        emit volumeChanged();
+    m_isBitPerfect = enabled;
+    audioplayer_set_bit_perfect(enabled ? 1 : 0);
+
+    if (enabled) {
+        m_signalPathInfo = QString("[Bit-Perfect Pure Mode: %1 (Direct Line-Out 0dB)]").arg(m_activeDeviceId);
+        setVolume(1.0f);
+    } else {
+        m_signalPathInfo = QString("[Audited DSP Mode: %1 (10-Band EQ Active)]").arg(m_activeDeviceId);
     }
+
+    emit bitPerfectChanged();
+    emit signalPathChanged();
 }
 
 void Backend::setVolume(float v) {
-    float clamped = qBound(0.0f, v, 1.0f);
-    if (qAbs(m_volume - clamped) > 0.001f) {
-        m_volume = clamped;
-        if (m_isBitPerfect && clamped < 0.999f) {
-            // Automatically switch out of Pure Mode if software volume is adjusted
-            m_isBitPerfect = false;
-            audioplayer_set_bit_perfect(0);
-            m_signalPathInfo = QString("[Audited DSP Mode: %1 (Software Volume & EQ Active)]").arg(m_activeDeviceId);
-            emit bitPerfectChanged();
-            emit signalPathChanged();
-        }
-        // Apply volume directly to audio sink via wpctl
-        QProcess::startDetached("wpctl", QStringList() << "set-volume" << "@DEFAULT_AUDIO_SINK@" << QString::number(clamped, 'f', 2));
-        emit volumeChanged();
-    }
+    m_volume = qBound(0.0f, v, 1.0f);
+    int mpvVol = (int)(m_volume * 100.0f);
+    sendMpvCommand(QString("{\"command\": [\"set_property\", \"volume\", %1]}\n").arg(mpvVol));
+    emit volumeChanged();
 }
 
 void Backend::setActiveDeviceId(const QString &id) {
-    if (m_activeDeviceId != id) {
-        m_activeDeviceId = id;
-        audioplayer_set_device(id.toUtf8().constData());
-        QProcess::startDetached("wpctl", QStringList() << "set-default" << id);
-        m_signalPathInfo = QString("[%1: %2]").arg(m_isBitPerfect ? "Bit-Perfect Pure" : "DSP Mode").arg(id);
-        emit deviceChanged();
-        emit signalPathChanged();
-    }
+    m_activeDeviceId = id;
+    audioplayer_set_device(id.toUtf8().constData());
+    setBitPerfect(m_isBitPerfect);
+    emit deviceChanged();
 }
 
 void Backend::playTrack(const QString &filePath, const QString &title, const QString &artist) {
     m_nowPlayingTitle = title;
     m_nowPlayingArtist = artist;
+    m_nowPlayingFilePath = filePath;
     emit trackChanged();
+
+    // Track play history
+    m_playHistory.removeAll(filePath);
+    m_playHistory.append(filePath);
+    if (m_playHistory.size() > 50) m_playHistory.removeFirst();
+
+    // Synchronize currentTrackIndex
+    QVariantList pool = m_playQueue.isEmpty() ? m_tracks : m_playQueue;
+    for (int i = 0; i < pool.size(); ++i) {
+        if (pool[i].toMap()["file_path"].toString() == filePath) {
+            m_currentTrackIndex = i;
+            emit currentTrackIndexChanged();
+            break;
+        }
+    }
 
     fetchLyrics(artist, title);
 
@@ -364,6 +393,158 @@ void Backend::stop() {
     emit positionChanged();
 }
 
+void Backend::cycleShuffleMode() {
+    m_shuffleMode = (m_shuffleMode + 1) % 3;
+    emit shuffleModeChanged();
+}
+
+void Backend::setShuffleMode(int mode) {
+    if (m_shuffleMode != mode) {
+        m_shuffleMode = mode;
+        emit shuffleModeChanged();
+    }
+}
+
+void Backend::cycleRepeatMode() {
+    m_repeatMode = (m_repeatMode + 1) % 3;
+    emit repeatModeChanged();
+}
+
+void Backend::setRepeatMode(int mode) {
+    if (m_repeatMode != mode) {
+        m_repeatMode = mode;
+        emit repeatModeChanged();
+    }
+}
+
+void Backend::nextTrack() {
+    QVariantList pool = m_playQueue.isEmpty() ? m_tracks : m_playQueue;
+    if (pool.isEmpty()) return;
+
+    if (m_repeatMode == 2 && m_currentTrackIndex >= 0 && m_currentTrackIndex < pool.size()) {
+        // Repeat One
+        QVariantMap trk = pool[m_currentTrackIndex].toMap();
+        playTrack(trk["file_path"].toString(), trk["title"].toString(), trk["track_artist"].toString());
+        return;
+    }
+
+    int nextIdx = -1;
+
+    if (m_shuffleMode == 1) {
+        // Normal Shuffle
+        if (pool.size() == 1) {
+            nextIdx = 0;
+        } else {
+            int tries = 0;
+            do {
+                nextIdx = QRandomGenerator::global()->bounded(pool.size());
+                tries++;
+            } while (nextIdx == m_currentTrackIndex && tries < 10);
+        }
+    } else if (m_shuffleMode == 2) {
+        // Smart Shuffle: Biased towards liked songs and artists
+        QSet<QString> likedArtists;
+        for (const QString &lp : m_likedTrackPaths) {
+            for (const auto &v : m_tracks) {
+                QVariantMap m = v.toMap();
+                if (m["file_path"].toString() == lp) {
+                    likedArtists.insert(m["track_artist"].toString().trimmed().toLower());
+                    break;
+                }
+            }
+        }
+
+        QVector<double> weights(pool.size(), 1.0);
+        for (int i = 0; i < pool.size(); ++i) {
+            QVariantMap m = pool[i].toMap();
+            QString path = m["file_path"].toString();
+            QString artist = m["track_artist"].toString().trimmed().toLower();
+
+            if (m_likedTrackPaths.contains(path)) {
+                weights[i] *= 6.0; // Liked songs get 6x weight
+            }
+            if (likedArtists.contains(artist)) {
+                weights[i] *= 2.5; // Same artist as liked songs get 2.5x
+            }
+            if (m_playHistory.contains(path)) {
+                weights[i] *= 0.1; // Avoid immediate repeat
+            }
+            if (i == m_currentTrackIndex && pool.size() > 1) {
+                weights[i] = 0.0;
+            }
+        }
+
+        double totalWeight = 0.0;
+        for (double w : weights) totalWeight += w;
+
+        if (totalWeight <= 0.0) {
+            nextIdx = QRandomGenerator::global()->bounded(pool.size());
+        } else {
+            double r = QRandomGenerator::global()->generateDouble() * totalWeight;
+            double running = 0.0;
+            for (int i = 0; i < pool.size(); ++i) {
+                running += weights[i];
+                if (r <= running) {
+                    nextIdx = i;
+                    break;
+                }
+            }
+            if (nextIdx < 0 || nextIdx >= pool.size()) nextIdx = 0;
+        }
+    } else {
+        // Sequential
+        nextIdx = m_currentTrackIndex + 1;
+        if (nextIdx >= pool.size()) {
+            if (m_repeatMode == 1) {
+                nextIdx = 0; // Repeat All
+            } else {
+                stop();
+                return;
+            }
+        }
+    }
+
+    if (nextIdx >= 0 && nextIdx < pool.size()) {
+        m_currentTrackIndex = nextIdx;
+        emit currentTrackIndexChanged();
+        QVariantMap trk = pool[nextIdx].toMap();
+        playTrack(trk["file_path"].toString(), trk["title"].toString(), trk["track_artist"].toString());
+    }
+}
+
+void Backend::previousTrack() {
+    if (m_positionMs > 3000) {
+        seekTo(0);
+        return;
+    }
+
+    QVariantList pool = m_playQueue.isEmpty() ? m_tracks : m_playQueue;
+    if (pool.isEmpty()) return;
+
+    if (m_playHistory.size() > 1) {
+        m_playHistory.takeLast(); // current
+        QString prevPath = m_playHistory.takeLast();
+        for (int i = 0; i < pool.size(); ++i) {
+            QVariantMap trk = pool[i].toMap();
+            if (trk["file_path"].toString() == prevPath) {
+                m_currentTrackIndex = i;
+                emit currentTrackIndexChanged();
+                playTrack(trk["file_path"].toString(), trk["title"].toString(), trk["track_artist"].toString());
+                return;
+            }
+        }
+    }
+
+    int prevIdx = m_currentTrackIndex - 1;
+    if (prevIdx < 0) {
+        prevIdx = (m_repeatMode == 1) ? (pool.size() - 1) : 0;
+    }
+    m_currentTrackIndex = prevIdx;
+    emit currentTrackIndexChanged();
+    QVariantMap trk = pool[prevIdx].toMap();
+    playTrack(trk["file_path"].toString(), trk["title"].toString(), trk["track_artist"].toString());
+}
+
 void Backend::scanFolder(const QString &folderPath) {
     audioplayer_scan_directory(folderPath.toUtf8().constData());
     setSortCriteria(0);
@@ -394,6 +575,8 @@ void Backend::setSortCriteria(int sortIndex) {
         }
     }
     emit libraryChanged();
+    emit likedTracksChanged();
+    emit activePlaylistTracksChanged();
 }
 
 void Backend::loadCustomPresets() {
@@ -437,7 +620,6 @@ void Backend::saveCustomPreset(const QString &name) {
     map["name"] = cleanName;
     map["gains"] = gains;
 
-    // Replace if exists, else append
     bool found = false;
     for (int i = 0; i < m_customEqPresets.size(); ++i) {
         if (m_customEqPresets[i].toMap()["name"].toString() == cleanName) {
@@ -474,6 +656,269 @@ void Backend::applyCustomPreset(int index) {
         m_activeEqPreset = -1; // custom
         emit eqChanged();
     }
+}
+
+void Backend::loadLikedTracks() {
+    m_likedTrackPaths.clear();
+    QString path = QDir::homePath() + "/.config/bitpure/liked_songs.json";
+    QFile f(path);
+    if (f.open(QIODevice::ReadOnly)) {
+        QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        if (doc.isArray()) {
+            for (const auto &v : doc.array()) {
+                m_likedTrackPaths.append(v.toString());
+            }
+        }
+        f.close();
+    }
+    emit likedTracksChanged();
+}
+
+void Backend::persistLikedTracks() {
+    QString dir = QDir::homePath() + "/.config/bitpure";
+    QDir().mkpath(dir);
+    QFile f(dir + "/liked_songs.json");
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        QJsonArray arr;
+        for (const QString &p : m_likedTrackPaths) {
+            arr.append(p);
+        }
+        f.write(QJsonDocument(arr).toJson());
+        f.close();
+    }
+}
+
+bool Backend::isTrackLiked(const QString &filePath) const {
+    return m_likedTrackPaths.contains(filePath);
+}
+
+void Backend::toggleLikeTrack(const QString &filePath) {
+    if (m_likedTrackPaths.contains(filePath)) {
+        m_likedTrackPaths.removeAll(filePath);
+    } else {
+        m_likedTrackPaths.append(filePath);
+    }
+    persistLikedTracks();
+    emit likedTracksChanged();
+}
+
+void Backend::likeTrack(const QString &filePath) {
+    if (!m_likedTrackPaths.contains(filePath)) {
+        m_likedTrackPaths.append(filePath);
+        persistLikedTracks();
+        emit likedTracksChanged();
+    }
+}
+
+void Backend::unlikeTrack(const QString &filePath) {
+    if (m_likedTrackPaths.contains(filePath)) {
+        m_likedTrackPaths.removeAll(filePath);
+        persistLikedTracks();
+        emit likedTracksChanged();
+    }
+}
+
+QVariantList Backend::likedTracks() const {
+    QVariantList list;
+    for (const auto &v : m_tracks) {
+        QVariantMap trk = v.toMap();
+        if (m_likedTrackPaths.contains(trk["file_path"].toString())) {
+            list.append(trk);
+        }
+    }
+    return list;
+}
+
+void Backend::loadPlaylists() {
+    m_playlists.clear();
+    QString path = QDir::homePath() + "/.config/bitpure/playlists.json";
+    QFile f(path);
+    if (f.open(QIODevice::ReadOnly)) {
+        QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        if (doc.isObject()) {
+            QJsonObject obj = doc.object();
+            for (auto it = obj.begin(); it != obj.end(); ++it) {
+                QStringList tracks;
+                if (it.value().isArray()) {
+                    for (const auto &v : it.value().toArray()) {
+                        tracks.append(v.toString());
+                    }
+                }
+                m_playlists[it.key()] = tracks;
+            }
+        }
+        f.close();
+    }
+    if (m_playlists.isEmpty()) {
+        m_playlists["Favorites"] = QStringList();
+    }
+    if (m_activePlaylistName.isEmpty() || !m_playlists.contains(m_activePlaylistName)) {
+        m_activePlaylistName = m_playlists.firstKey();
+    }
+    emit playlistsChanged();
+    emit activePlaylistTracksChanged();
+}
+
+void Backend::persistPlaylists() {
+    QString dir = QDir::homePath() + "/.config/bitpure";
+    QDir().mkpath(dir);
+    QFile f(dir + "/playlists.json");
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        QJsonObject obj;
+        for (auto it = m_playlists.begin(); it != m_playlists.end(); ++it) {
+            QJsonArray arr;
+            for (const QString &p : it.value()) {
+                arr.append(p);
+            }
+            obj[it.key()] = arr;
+        }
+        f.write(QJsonDocument(obj).toJson());
+        f.close();
+    }
+}
+
+void Backend::createPlaylist(const QString &name) {
+    QString clean = name.trimmed();
+    if (clean.isEmpty()) return;
+    if (!m_playlists.contains(clean)) {
+        m_playlists[clean] = QStringList();
+        m_activePlaylistName = clean;
+        persistPlaylists();
+        emit playlistsChanged();
+        emit activePlaylistNameChanged();
+        emit activePlaylistTracksChanged();
+    }
+}
+
+void Backend::deletePlaylist(const QString &name) {
+    if (m_playlists.contains(name)) {
+        m_playlists.remove(name);
+        if (m_activePlaylistName == name) {
+            m_activePlaylistName = m_playlists.isEmpty() ? "" : m_playlists.firstKey();
+            emit activePlaylistNameChanged();
+        }
+        persistPlaylists();
+        emit playlistsChanged();
+        emit activePlaylistTracksChanged();
+    }
+}
+
+void Backend::addToPlaylist(const QString &playlistName, const QString &filePath) {
+    if (m_playlists.contains(playlistName)) {
+        if (!m_playlists[playlistName].contains(filePath)) {
+            m_playlists[playlistName].append(filePath);
+            persistPlaylists();
+            emit playlistsChanged();
+            if (m_activePlaylistName == playlistName) {
+                emit activePlaylistTracksChanged();
+            }
+        }
+    }
+}
+
+void Backend::removeFromPlaylist(const QString &playlistName, const QString &filePath) {
+    if (m_playlists.contains(playlistName)) {
+        if (m_playlists[playlistName].removeAll(filePath) > 0) {
+            persistPlaylists();
+            emit playlistsChanged();
+            if (m_activePlaylistName == playlistName) {
+                emit activePlaylistTracksChanged();
+            }
+        }
+    }
+}
+
+void Backend::setActivePlaylistName(const QString &name) {
+    if (m_activePlaylistName != name && m_playlists.contains(name)) {
+        m_activePlaylistName = name;
+        emit activePlaylistNameChanged();
+        emit activePlaylistTracksChanged();
+    }
+}
+
+QVariantList Backend::activePlaylistTracks() const {
+    QVariantList list;
+    if (!m_playlists.contains(m_activePlaylistName)) return list;
+    const QStringList &paths = m_playlists[m_activePlaylistName];
+    for (const QString &p : paths) {
+        for (const auto &v : m_tracks) {
+            QVariantMap trk = v.toMap();
+            if (trk["file_path"].toString() == p) {
+                list.append(trk);
+                break;
+            }
+        }
+    }
+    return list;
+}
+
+void Backend::addToQueue(const QString &filePath) {
+    for (const auto &v : m_tracks) {
+        QVariantMap trk = v.toMap();
+        if (trk["file_path"].toString() == filePath) {
+            m_playQueue.append(trk);
+            emit playQueueChanged();
+            break;
+        }
+    }
+}
+
+void Backend::removeFromQueue(int index) {
+    if (index >= 0 && index < m_playQueue.size()) {
+        m_playQueue.removeAt(index);
+        emit playQueueChanged();
+    }
+}
+
+void Backend::clearQueue() {
+    m_playQueue.clear();
+    emit playQueueChanged();
+}
+
+bool Backend::deleteTrackFromStorage(const QString &filePath) {
+    if (!QFile::exists(filePath)) return false;
+
+    if (m_isPlaying && m_nowPlayingFilePath == filePath) {
+        stop();
+    }
+
+    bool removed = QFile::remove(filePath);
+    if (!removed) return false;
+
+    // Remove from in-memory tracks
+    for (int i = m_tracks.size() - 1; i >= 0; --i) {
+        if (m_tracks[i].toMap()["file_path"].toString() == filePath) {
+            m_tracks.removeAt(i);
+        }
+    }
+    // Remove from queue
+    for (int i = m_playQueue.size() - 1; i >= 0; --i) {
+        if (m_playQueue[i].toMap()["file_path"].toString() == filePath) {
+            m_playQueue.removeAt(i);
+        }
+    }
+    // Remove from liked
+    if (m_likedTrackPaths.contains(filePath)) {
+        m_likedTrackPaths.removeAll(filePath);
+        persistLikedTracks();
+        emit likedTracksChanged();
+    }
+    // Remove from playlists
+    bool pChanged = false;
+    for (auto it = m_playlists.begin(); it != m_playlists.end(); ++it) {
+        if (it.value().removeAll(filePath) > 0) {
+            pChanged = true;
+        }
+    }
+    if (pChanged) {
+        persistPlaylists();
+        emit playlistsChanged();
+        emit activePlaylistTracksChanged();
+    }
+
+    emit libraryChanged();
+    emit playQueueChanged();
+    return true;
 }
 
 void Backend::fetchLyrics(const QString &artist, const QString &title) {
