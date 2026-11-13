@@ -44,3 +44,4 @@ private:
     QTimer m_statsTimer;
     QTimer m_storageTimer;
 };
+

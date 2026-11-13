@@ -12,13 +12,9 @@ ApplicationWindow {
     minimumHeight: 580
     title: "BitPure — " + localTheme.family + " (" + localTheme.variant + ")"
 
-    Theme {
-        id: localTheme
-    }
-
-    Backend {
-        id: localBackend
-    }
+    // Statically-typed bindings to root C++ context properties
+    readonly property Theme localTheme: theme
+    readonly property Backend localBackend: backend
 
     // Helper functions for dynamic typography
     function appFontFamily() {
@@ -32,7 +28,7 @@ ApplicationWindow {
     }
 
     // Active navigation and state
-    property string currentTab: "queue" // queue, liked, playlists, albums, artists, all, settings
+    property string currentTab: "home" // home, queue, albums, artists, playlists, history, liked, all, settings
     property string currentSettingsTab: "appearance" // appearance, audio, playback, library, lyrics, advanced
     property string activeMood: ""
     property var selectedAlbum: null
@@ -40,7 +36,9 @@ ApplicationWindow {
 
     // Global keyboard navigation
     Item {
+        id: globalKeyHandler
         focus: true
+        Component.onCompleted: forceActiveFocus()
         Keys.onPressed: (event) => {
             if (event.key === Qt.Key_Space) {
                 if (localBackend.isPlaying) localBackend.pause();
@@ -77,6 +75,12 @@ ApplicationWindow {
             } else if (event.key === Qt.Key_V) {
                 localBackend.seekTo(Math.min(localBackend.durationMs, localBackend.positionMs + 5000));
                 event.accepted = true;
+            } else if (event.key === Qt.Key_T) {
+                localTheme.cycleFamily();
+                event.accepted = true;
+            } else if (event.key === Qt.Key_Y) {
+                localTheme.cycleVariant();
+                event.accepted = true;
             } else if (event.key === Qt.Key_M) {
                 var moods = ["Sad", "Fun", "Rock", "Traveling", "Chill", "Energetic"];
                 var mIdx = (moods.indexOf(activeMood) + 1) % moods.length;
@@ -112,9 +116,9 @@ ApplicationWindow {
                     selectedAlbumTracks = localBackend.getAlbumTracks(selectedAlbum.id);
                     event.accepted = true;
                 }
-            } else if ((event.key >= Qt.Key_1 && event.key <= Qt.Key_7) || (event.text >= "1" && event.text <= "7")) {
-                var tabs = ["queue", "liked", "playlists", "albums", "artists", "all", "settings"];
-                var idx = (event.key >= Qt.Key_1 && event.key <= Qt.Key_7) ? (event.key - Qt.Key_1) : (parseInt(event.text) - 1);
+            } else if ((event.key >= Qt.Key_1 && event.key <= Qt.Key_9) || (event.text >= "1" && event.text <= "9")) {
+                var tabs = ["home", "queue", "albums", "artists", "playlists", "history", "liked", "all", "settings"];
+                var idx = (event.key >= Qt.Key_1 && event.key <= Qt.Key_9) ? (event.key - Qt.Key_1) : (parseInt(event.text) - 1);
                 if (idx >= 0 && idx < tabs.length) {
                     currentTab = tabs[idx];
                     if (currentTab !== "albums") selectedAlbum = null;
@@ -546,14 +550,16 @@ ApplicationWindow {
             Layout.fillWidth: true
             spacing: 6
 
-            // Tabs: Queue | Liked | Playlists | Albums | Artists | All Songs | Settings
+            // Tabs: Home | Queue | Albums | Artists | Playlists | History | Liked | All Songs | Settings
             Repeater {
                 model: [
+                    { id: "home", label: "Home" },
                     { id: "queue", label: "Queue" },
-                    { id: "liked", label: "♥ Liked" },
-                    { id: "playlists", label: "Playlists" },
                     { id: "albums", label: "Albums" },
                     { id: "artists", label: "Artists" },
+                    { id: "playlists", label: "Playlists" },
+                    { id: "history", label: "History" },
+                    { id: "liked", label: "♥ Liked" },
                     { id: "all", label: "All Songs" },
                     { id: "settings", label: "Settings" }
                 ]
@@ -793,21 +799,93 @@ ApplicationWindow {
                         }
                     }
 
-                    // Full Lyrics Scrollable Context
-                    ScrollView {
+                    // Synced Lyrics Dynamic Flow (Real-time auto-scrolling with timestamp seeking)
+                    Item {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
-                        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-                        Text {
-                            width: parent.width
-                            text: localBackend.lyrics !== "" ? localBackend.lyrics : "(no lyrics loaded)"
-                            color: localBackend.lyrics !== "" ? localTheme.textMuted : localTheme.border
-                            font.pixelSize: appFontSize(10)
-                            font.family: appFontFamily()
-                            wrapMode: Text.Wrap
-                            lineHeight: 1.4
+                        // CASE 1: Synced Lyrics lines available
+                        ListView {
+                            id: syncedLyricsList
+                            anchors.fill: parent
+                            clip: true
+                            spacing: 4
+                            visible: localBackend.syncedLyricsLines.length > 0
+                            model: localBackend.syncedLyricsLines
+
+                            Connections {
+                                target: localBackend
+                                function onCurrentLyricIndexChanged() {
+                                    if (localBackend.currentLyricIndex >= 0 && localBackend.currentLyricIndex < syncedLyricsList.count) {
+                                        syncedLyricsList.positionViewAtIndex(localBackend.currentLyricIndex, ListView.Center);
+                                    }
+                                }
+                            }
+
+                            delegate: Rectangle {
+                                width: syncedLyricsList.width
+                                height: Math.max(22, lineCol.implicitHeight + 6)
+                                radius: 2
+                                color: index === localBackend.currentLyricIndex
+                                       ? localTheme.selection
+                                       : (lyrMouse.containsMouse ? localTheme.surfaceElevated : "transparent")
+
+                                RowLayout {
+                                    id: lineCol
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 6
+                                    anchors.rightMargin: 6
+                                    spacing: 6
+
+                                    Text {
+                                        Layout.preferredWidth: 28
+                                        text: index === localBackend.currentLyricIndex ? "▶" : modelData.timeStr
+                                        color: index === localBackend.currentLyricIndex ? localTheme.accent : localTheme.textMuted
+                                        font.bold: index === localBackend.currentLyricIndex
+                                        font.pixelSize: appFontSize(8)
+                                        font.family: appFontFamily()
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: modelData.text
+                                        color: index === localBackend.currentLyricIndex
+                                               ? localTheme.lyricsCurrent
+                                               : (index < localBackend.currentLyricIndex ? localTheme.lyricsPrevious : localTheme.lyricsInactive)
+                                        font.bold: index === localBackend.currentLyricIndex
+                                        font.pixelSize: index === localBackend.currentLyricIndex ? appFontSize(11) : appFontSize(10)
+                                        font.family: appFontFamily()
+                                        wrapMode: Text.Wrap
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: lyrMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: localBackend.seekTo(modelData.timeMs)
+                                }
+                            }
+                        }
+
+                        // CASE 2: Plain text or empty state
+                        ScrollView {
+                            anchors.fill: parent
+                            visible: localBackend.syncedLyricsLines.length === 0
+                            clip: true
+                            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                            Text {
+                                width: parent.width
+                                text: localBackend.lyrics !== "" ? localBackend.lyrics : "(no lyrics loaded)"
+                                color: localBackend.lyrics !== "" ? localTheme.textMuted : localTheme.border
+                                font.pixelSize: appFontSize(10)
+                                font.family: appFontFamily()
+                                wrapMode: Text.Wrap
+                                lineHeight: 1.4
+                            }
                         }
                     }
 
@@ -868,30 +946,359 @@ ApplicationWindow {
                         }
                     }
 
-                    SequentialAnimation {
+                    ParallelAnimation {
                         id: tabTransitionAnim
                         NumberAnimation {
                             target: viewTransitionContainer
                             property: "opacity"
-                            from: 0.35
+                            from: 0.25
                             to: 1.0
-                            duration: 180
+                            duration: 150
                             easing.type: Easing.OutCubic
                         }
                     }
 
                     // =========================================================
-                    // VIEW A: TRACK TABLE (Queue, Liked, Playlists, Artists, All Songs)
+                    // VIEW 0: HOME / DISCOVERY VIEW
+                    // =========================================================
+                    ScrollView {
+                        id: homeScrollView
+                        anchors.fill: parent
+                        anchors.margins: 14
+                        visible: currentTab === "home"
+                        clip: true
+                        ScrollBar.vertical.policy: ScrollBar.AsNeeded
+
+                        ColumnLayout {
+                            width: homeScrollView.availableWidth
+                            spacing: 14
+
+                            // 1. Lossless Audiophile Header Banner
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: 68
+                                color: localTheme.surfaceElevated
+                                border.color: localTheme.border
+                                border.width: 1
+                                radius: 4
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 12
+                                    spacing: 12
+
+                                    Rectangle {
+                                        width: 40
+                                        height: 40
+                                        radius: 20
+                                        color: localTheme.surface
+                                        border.color: localTheme.accent
+                                        border.width: 1
+
+                                        Text {
+                                            anchors.centerIn: parent
+                                            text: "⚡"
+                                            font.pixelSize: appFontSize(16)
+                                        }
+                                    }
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+
+                                        Text {
+                                            text: "BitPure Lossless Audio Engine"
+                                            color: localTheme.text
+                                            font.bold: true
+                                            font.pixelSize: appFontSize(13)
+                                            font.family: appFontFamily()
+                                        }
+
+                                        Text {
+                                            text: "Pure bit-perfect playback • Direct ALSA hardware integration • Studio Master Quality"
+                                            color: localTheme.textMuted
+                                            font.pixelSize: appFontSize(9)
+                                            font.family: appFontFamily()
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        Layout.preferredHeight: 26
+                                        Layout.preferredWidth: 150
+                                        color: localTheme.surface
+                                        border.color: localTheme.accent
+                                        border.width: 1
+                                        radius: 2
+
+                                        RowLayout {
+                                            anchors.centerIn: parent
+                                            spacing: 6
+                                            Rectangle { width: 6; height: 6; radius: 3; color: localTheme.statusSuccess }
+                                            Text {
+                                                text: localBackend.isBitPerfect ? "DIRECT BIT-PERFECT" : "DSP ACTIVE"
+                                                color: localTheme.accent
+                                                font.bold: true
+                                                font.pixelSize: appFontSize(9)
+                                                font.family: appFontFamily()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 2. MOOD PLAYBACK SECTION
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: homeMoodCol.implicitHeight + 24
+                                color: localTheme.background
+                                border.color: localTheme.border
+                                border.width: 1
+                                radius: 4
+
+                                ColumnLayout {
+                                    id: homeMoodCol
+                                    anchors.fill: parent
+                                    anchors.margins: 12
+                                    spacing: 10
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Text {
+                                            text: "MOOD-BASED MUSIC PLAYBACK"
+                                            color: localTheme.accent
+                                            font.bold: true
+                                            font.pixelSize: appFontSize(11)
+                                            font.family: appFontFamily()
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                        Text {
+                                            text: activeMood ? ("Current Session: " + activeMood) : "Select a mood to start curated listening"
+                                            color: activeMood ? localTheme.accent : localTheme.textMuted
+                                            font.pixelSize: appFontSize(9)
+                                            font.family: appFontFamily()
+                                        }
+                                    }
+
+                                    Flow {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+
+                                        Repeater {
+                                            model: [
+                                                { name: "Sad", emoji: "🌧", desc: "Soulful, melancholic ballads" },
+                                                { name: "Fun", emoji: "🎉", desc: "Upbeat energetic rhythms" },
+                                                { name: "Rock", emoji: "🎸", desc: "Driving guitars & punchy beats" },
+                                                { name: "Traveling", emoji: "🚗", desc: "Atmospheric open-road melodies" },
+                                                { name: "Chill", emoji: "☕", desc: "Relaxed acoustic vibes" },
+                                                { name: "Energetic", emoji: "⚡", desc: "High-octane dynamic anthems" }
+                                            ]
+
+                                            Rectangle {
+                                                height: 34
+                                                width: homeMoodBtnRow.implicitWidth + 20
+                                                radius: 3
+                                                color: activeMood === modelData.name ? localTheme.accent : (homeMoodCardMouse.containsMouse ? localTheme.surfaceElevated : localTheme.surface)
+                                                border.color: activeMood === modelData.name ? localTheme.accent : localTheme.border
+                                                border.width: 1
+
+                                                RowLayout {
+                                                    id: homeMoodBtnRow
+                                                    anchors.centerIn: parent
+                                                    spacing: 6
+                                                    Text {
+                                                        text: modelData.emoji
+                                                        font.pixelSize: appFontSize(12)
+                                                    }
+                                                    Text {
+                                                        text: modelData.name
+                                                        color: activeMood === modelData.name ? localTheme.background : localTheme.text
+                                                        font.bold: true
+                                                        font.pixelSize: appFontSize(10)
+                                                        font.family: appFontFamily()
+                                                    }
+                                                }
+
+                                                MouseArea {
+                                                    id: homeMoodCardMouse
+                                                    anchors.fill: parent
+                                                    hoverEnabled: true
+                                                    cursorShape: Qt.PointingHandCursor
+                                                    onClicked: {
+                                                        activeMood = modelData.name;
+                                                        localBackend.playMood(modelData.name);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 3. FEATURED ALBUMS ROW
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text {
+                                        text: "FEATURED ALBUMS"
+                                        color: localTheme.text
+                                        font.bold: true
+                                        font.pixelSize: appFontSize(11)
+                                        font.family: appFontFamily()
+                                    }
+                                    Item { Layout.fillWidth: true }
+                                    Text {
+                                        text: "View All (" + localBackend.albums.length + ") →"
+                                        color: localTheme.accent
+                                        font.pixelSize: appFontSize(10)
+                                        font.family: appFontFamily()
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: currentTab = "albums"
+                                        }
+                                    }
+                                }
+
+                                Flow {
+                                    Layout.fillWidth: true
+                                    spacing: 10
+
+                                    Repeater {
+                                        model: Math.min(8, localBackend.albums.length)
+
+                                        Rectangle {
+                                            width: 105
+                                            height: 140
+                                            color: homeAlbMouse.containsMouse ? localTheme.surfaceElevated : localTheme.surface
+                                            border.color: homeAlbMouse.containsMouse ? localTheme.accent : localTheme.border
+                                            border.width: 1
+                                            radius: 3
+
+                                            property var alb: localBackend.albums[index]
+
+                                            ColumnLayout {
+                                                anchors.fill: parent
+                                                anchors.margins: 6
+                                                spacing: 4
+
+                                                Rectangle {
+                                                    Layout.preferredWidth: 93
+                                                    Layout.preferredHeight: 93
+                                                    color: localTheme.background
+                                                    radius: 2
+                                                    clip: true
+
+                                                    Image {
+                                                        anchors.fill: parent
+                                                        source: parent.parent.parent.alb && parent.parent.parent.alb.cover_art_path ? ("file://" + parent.parent.parent.alb.cover_art_path) : ""
+                                                        fillMode: Image.PreserveAspectCrop
+                                                        asynchronous: true
+                                                        visible: status === Image.Ready
+                                                    }
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "💿"
+                                                        font.pixelSize: 26
+                                                        visible: !parent.parent.parent.alb || !parent.parent.parent.alb.cover_art_path
+                                                    }
+                                                }
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: parent.parent.alb ? parent.parent.alb.title : ""
+                                                    color: localTheme.text
+                                                    font.bold: true
+                                                    font.pixelSize: appFontSize(9)
+                                                    font.family: appFontFamily()
+                                                    elide: Text.ElideRight
+                                                    maximumLineCount: 1
+                                                }
+
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: parent.parent.alb ? parent.parent.alb.album_artist : ""
+                                                    color: localTheme.accent
+                                                    font.pixelSize: appFontSize(8)
+                                                    font.family: appFontFamily()
+                                                    elide: Text.ElideRight
+                                                    maximumLineCount: 1
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: homeAlbMouse
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.PointingHandCursor
+                                                onClicked: {
+                                                    selectedAlbum = parent.alb;
+                                                    selectedAlbumTracks = localBackend.getAlbumTracks(parent.alb.id);
+                                                    currentTab = "albums";
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 4. QUICK STATS FOOTER
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: 30
+                                color: localTheme.surface
+                                border.color: localTheme.border
+                                border.width: 1
+                                radius: 2
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 12
+                                    anchors.rightMargin: 12
+                                    spacing: 16
+
+                                    Text {
+                                        text: "Library: " + localBackend.tracks.length + " Lossless Tracks"
+                                        color: localTheme.textMuted
+                                        font.pixelSize: appFontSize(9)
+                                        font.family: appFontFamily()
+                                    }
+
+                                    Text {
+                                        text: "Albums: " + localBackend.albums.length
+                                        color: localTheme.textMuted
+                                        font.pixelSize: appFontSize(9)
+                                        font.family: appFontFamily()
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+
+                                    Text {
+                                        text: "Direct ALSA [hw:1,0] Line-Out Direct"
+                                        color: localTheme.accent
+                                        font.pixelSize: appFontSize(9)
+                                        font.family: appFontFamily()
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // =========================================================
+                    // VIEW A: TRACK TABLE (Queue, Liked, Playlists, Artists, All Songs, History)
                     // =========================================================
                     ColumnLayout {
                         anchors.fill: parent
                         anchors.margins: 10
                         spacing: 6
-                        visible: currentTab === "queue" || currentTab === "liked" || currentTab === "playlists" || currentTab === "all" || currentTab === "artists"
+                        visible: currentTab === "queue" || currentTab === "liked" || currentTab === "playlists" || currentTab === "all" || currentTab === "artists" || currentTab === "history"
 
-                        // SUB-HEADER BAR FOR PLAYLISTS / QUEUE / LIKED
+                        // SUB-HEADER BAR FOR PLAYLISTS / QUEUE / LIKED / HISTORY
                         RowLayout {
-                            visible: currentTab === "playlists" || currentTab === "liked" || (currentTab === "queue" && localBackend.playQueue.length > 0)
+                            visible: currentTab === "playlists" || currentTab === "liked" || currentTab === "history" || (currentTab === "queue" && localBackend.playQueue.length > 0)
                             Layout.fillWidth: true
                             spacing: 8
 
@@ -1016,6 +1423,21 @@ ApplicationWindow {
                                     }
                                 }
                             }
+
+                            // History Sub-row
+                            RowLayout {
+                                visible: currentTab === "history"
+                                Layout.fillWidth: true
+                                spacing: 8
+
+                                Text {
+                                    text: "Listening History (" + localBackend.historyTracks.length + " tracks) — Most recently played first"
+                                    color: localTheme.accent
+                                    font.bold: true
+                                    font.pixelSize: appFontSize(10)
+                                    font.family: appFontFamily()
+                                }
+                            }
                         }
 
                         // TABLE HEADER BAR
@@ -1084,6 +1506,7 @@ ApplicationWindow {
                             model: {
                                 if (currentTab === "liked") return localBackend.likedTracks;
                                 if (currentTab === "playlists") return localBackend.activePlaylistTracks;
+                                if (currentTab === "history") return localBackend.historyTracks;
                                 if (currentTab === "queue" && localBackend.playQueue.length > 0) return localBackend.playQueue;
                                 return localBackend.tracks;
                             }
@@ -1225,6 +1648,7 @@ ApplicationWindow {
                                             radius: localTheme.radius
 
                                             Image {
+                                                id: albCoverImg
                                                 anchors.fill: parent
                                                 anchors.margins: 2
                                                 fillMode: Image.PreserveAspectCrop
@@ -1232,11 +1656,31 @@ ApplicationWindow {
                                                 visible: status === Image.Ready
                                             }
 
-                                            Text {
-                                                anchors.centerIn: parent
-                                                text: "💿"
-                                                font.pixelSize: 36
-                                                visible: !modelData.cover_art_path
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                visible: !modelData.cover_art_path || albCoverImg.status !== Image.Ready
+                                                color: localTheme.surfaceElevated
+                                                radius: localTheme.radius
+                                                border.color: localTheme.border
+                                                border.width: 1
+
+                                                ColumnLayout {
+                                                    anchors.centerIn: parent
+                                                    spacing: 2
+                                                    Text {
+                                                        Layout.alignment: Qt.AlignHCenter
+                                                        text: "💿"
+                                                        font.pixelSize: 28
+                                                    }
+                                                    Text {
+                                                        Layout.alignment: Qt.AlignHCenter
+                                                        text: modelData.album_artist.length > 0 ? modelData.album_artist.substring(0, 16) : "Album"
+                                                        color: localTheme.accent
+                                                        font.pixelSize: appFontSize(8)
+                                                        font.family: appFontFamily()
+                                                        elide: Text.ElideRight
+                                                    }
+                                                }
                                             }
                                         }
 
@@ -1378,6 +1822,7 @@ ApplicationWindow {
                                         border.width: 1
 
                                         Image {
+                                            id: detailCoverImg
                                             anchors.fill: parent
                                             fillMode: Image.PreserveAspectCrop
                                             source: (selectedAlbum && selectedAlbum.cover_art_path) ? ("file://" + selectedAlbum.cover_art_path) : ""
@@ -1388,7 +1833,7 @@ ApplicationWindow {
                                             anchors.centerIn: parent
                                             text: "💿"
                                             font.pixelSize: 32
-                                            visible: !(selectedAlbum && selectedAlbum.cover_art_path)
+                                            visible: !selectedAlbum || !selectedAlbum.cover_art_path || detailCoverImg.status !== Image.Ready
                                         }
                                     }
 
@@ -1601,43 +2046,138 @@ ApplicationWindow {
                                             id: themeCardCol
                                             anchors.fill: parent
                                             anchors.margins: 12
-                                            spacing: 10
-
-                                            Text {
-                                                text: "Theme Family & Variant"
-                                                color: localTheme.accent
-                                                font.bold: true
-                                                font.pixelSize: appFontSize(11)
-                                                font.family: appFontFamily()
-                                            }
+                                            spacing: 12
 
                                             RowLayout {
-                                                spacing: 12
+                                                Layout.fillWidth: true
+                                                Text {
+                                                    text: "Theme"
+                                                    color: localTheme.accent
+                                                    font.bold: true
+                                                    font.pixelSize: appFontSize(12)
+                                                    font.family: appFontFamily()
+                                                }
+                                                Item { Layout.fillWidth: true }
+                                                Text {
+                                                    text: localTheme.family + " · " + localTheme.variant
+                                                    color: localTheme.textMuted
+                                                    font.pixelSize: appFontSize(10)
+                                                    font.family: appFontFamily()
+                                                }
+                                            }
+
+                                            // 1. Theme Family Quick-Selector Pills
+                                            RowLayout {
+                                                spacing: 6
+                                                Layout.fillWidth: true
 
                                                 Text { text: "Family:"; color: localTheme.text; font.pixelSize: appFontSize(10); font.family: appFontFamily() }
 
-                                                ComboBox {
-                                                    id: familyCombo
-                                                    Layout.preferredWidth: 180
-                                                    Layout.preferredHeight: 26
+                                                Repeater {
                                                     model: localTheme.availableFamilies
-                                                    currentIndex: Math.max(0, localTheme.availableFamilies.indexOf(localTheme.family))
-                                                    onActivated: (idx) => localTheme.setFamily(model[idx])
-                                                    background: Rectangle { color: localTheme.surface; border.color: localTheme.border; border.width: 1; radius: 2 }
-                                                    contentItem: Text { leftPadding: 8; text: familyCombo.displayText; color: localTheme.text; font.pixelSize: appFontSize(10); font.family: appFontFamily(); verticalAlignment: Text.AlignVCenter }
+
+                                                    Rectangle {
+                                                        Layout.preferredHeight: 24
+                                                        Layout.preferredWidth: famText.implicitWidth + 16
+                                                        radius: 2
+                                                        color: localTheme.family === modelData ? localTheme.accent : (famMouse.containsMouse ? localTheme.surfaceElevated : localTheme.surface)
+                                                        border.color: localTheme.family === modelData ? localTheme.accent : localTheme.border
+                                                        border.width: 1
+
+                                                        Text {
+                                                            id: famText
+                                                            anchors.centerIn: parent
+                                                            text: modelData
+                                                            color: localTheme.family === modelData ? localTheme.background : localTheme.text
+                                                            font.bold: localTheme.family === modelData
+                                                            font.pixelSize: appFontSize(10)
+                                                            font.family: appFontFamily()
+                                                        }
+
+                                                        MouseArea {
+                                                            id: famMouse
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: localTheme.setFamily(modelData)
+                                                        }
+                                                    }
                                                 }
+                                            }
+
+                                            // 2. Theme Variant Quick-Selector Chips
+                                            RowLayout {
+                                                spacing: 6
+                                                Layout.fillWidth: true
 
                                                 Text { text: "Variant:"; color: localTheme.text; font.pixelSize: appFontSize(10); font.family: appFontFamily() }
 
-                                                ComboBox {
-                                                    id: variantCombo
-                                                    Layout.preferredWidth: 220
-                                                    Layout.preferredHeight: 26
-                                                    model: localTheme.availableVariants
-                                                    currentIndex: Math.max(0, localTheme.availableVariants.indexOf(localTheme.variant))
-                                                    onActivated: (idx) => localTheme.setVariant(model[idx])
-                                                    background: Rectangle { color: localTheme.surface; border.color: localTheme.border; border.width: 1; radius: 2 }
-                                                    contentItem: Text { leftPadding: 8; text: variantCombo.displayText; color: localTheme.text; font.pixelSize: appFontSize(10); font.family: appFontFamily(); verticalAlignment: Text.AlignVCenter }
+                                                Flow {
+                                                    Layout.fillWidth: true
+                                                    spacing: 6
+
+                                                    Repeater {
+                                                        model: localTheme.availableVariants
+
+                                                        Rectangle {
+                                                            height: 22
+                                                            width: varText.implicitWidth + 14
+                                                            radius: 2
+                                                            color: localTheme.variant === modelData ? localTheme.selection : (varMouse.containsMouse ? localTheme.surfaceElevated : "transparent")
+                                                            border.color: localTheme.variant === modelData ? localTheme.accent : localTheme.border
+                                                            border.width: 1
+
+                                                            Text {
+                                                                id: varText
+                                                                anchors.centerIn: parent
+                                                                text: modelData
+                                                                color: localTheme.variant === modelData ? localTheme.accent : localTheme.textMuted
+                                                                font.bold: localTheme.variant === modelData
+                                                                font.pixelSize: appFontSize(9)
+                                                                font.family: appFontFamily()
+                                                            }
+
+                                                            MouseArea {
+                                                                id: varMouse
+                                                                anchors.fill: parent
+                                                                hoverEnabled: true
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: localTheme.setVariant(modelData)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // 3. Palette Swatch Preview Strip
+                                            RowLayout {
+                                                spacing: 8
+                                                Text { text: "Palette:"; color: localTheme.textMuted; font.pixelSize: appFontSize(9); font.family: appFontFamily() }
+                                                Repeater {
+                                                    model: [
+                                                        { color: localTheme.background, label: "BG" },
+                                                        { color: localTheme.surface, label: "Surface" },
+                                                        { color: localTheme.surfaceElevated, label: "Elevated" },
+                                                        { color: localTheme.border, label: "Border" },
+                                                        { color: localTheme.accent, label: "Accent" },
+                                                        { color: localTheme.text, label: "Text" },
+                                                        { color: localTheme.statusSuccess, label: "Success" }
+                                                    ]
+                                                    Rectangle {
+                                                        width: 38
+                                                        height: 18
+                                                        radius: 2
+                                                        color: modelData.color
+                                                        border.color: localTheme.border
+                                                        border.width: 1
+                                                        Text {
+                                                            anchors.centerIn: parent
+                                                            text: modelData.label
+                                                            color: (index === 0 || index === 1) ? localTheme.textMuted : localTheme.background
+                                                            font.pixelSize: 8
+                                                            font.family: appFontFamily()
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
@@ -1680,6 +2220,41 @@ ApplicationWindow {
                                                     onActivated: (idx) => settingsManager.setFontFamily(model[idx])
                                                     background: Rectangle { color: localTheme.surface; border.color: localTheme.border; border.width: 1; radius: 2 }
                                                     contentItem: Text { leftPadding: 8; text: fontCombo.displayText; color: localTheme.text; font.pixelSize: appFontSize(10); font.family: appFontFamily(); verticalAlignment: Text.AlignVCenter }
+                                                    delegate: ItemDelegate {
+                                                        width: fontCombo.width
+                                                        height: 28
+                                                        highlighted: fontCombo.highlightedIndex === index
+                                                        contentItem: Text {
+                                                            leftPadding: 8
+                                                            text: modelData || ""
+                                                            color: highlighted ? localTheme.accent : localTheme.text
+                                                            font.pixelSize: appFontSize(10)
+                                                            font.family: modelData === "System Default" ? appFontFamily() : modelData
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                        background: Rectangle {
+                                                            color: highlighted ? localTheme.surfaceElevated : localTheme.surface
+                                                        }
+                                                    }
+                                                    popup: Popup {
+                                                        y: fontCombo.height + 2
+                                                        width: fontCombo.width
+                                                        implicitHeight: Math.min(220, contentItem.implicitHeight)
+                                                        padding: 1
+                                                        contentItem: ListView {
+                                                            clip: true
+                                                            implicitHeight: contentHeight
+                                                            model: fontCombo.popup.visible ? fontCombo.delegateModel : null
+                                                            currentIndex: fontCombo.highlightedIndex
+                                                            ScrollIndicator.vertical: ScrollIndicator { }
+                                                        }
+                                                        background: Rectangle {
+                                                            color: localTheme.surface
+                                                            border.color: localTheme.accent
+                                                            border.width: 1
+                                                            radius: 2
+                                                        }
+                                                    }
                                                 }
 
                                                 Text {
@@ -1817,7 +2392,7 @@ ApplicationWindow {
                                             spacing: 10
 
                                             Text {
-                                                text: "Audio Output & DSP Mode"
+                                                text: "Playback Mode"
                                                 color: localTheme.accent
                                                 font.bold: true
                                                 font.pixelSize: appFontSize(11)
@@ -1894,7 +2469,7 @@ ApplicationWindow {
                                             spacing: 10
 
                                             Text {
-                                                text: "Hardware Output Device"
+                                                text: "Output Device"
                                                 color: localTheme.accent
                                                 font.bold: true
                                                 font.pixelSize: appFontSize(11)
@@ -1921,6 +2496,40 @@ ApplicationWindow {
                                                     onActivated: (idx) => localBackend.setActiveDeviceId(localBackend.devices[idx].id)
                                                     background: Rectangle { color: localTheme.surface; border.color: localTheme.border; border.width: 1; radius: 2 }
                                                     contentItem: Text { leftPadding: 8; text: devCombo.displayText; color: localTheme.text; font.pixelSize: appFontSize(10); font.family: appFontFamily(); verticalAlignment: Text.AlignVCenter }
+                                                    delegate: ItemDelegate {
+                                                        width: devCombo.width
+                                                        height: 28
+                                                        highlighted: devCombo.highlightedIndex === index
+                                                        contentItem: Text {
+                                                            leftPadding: 8
+                                                            text: modelData.name || ""
+                                                            color: highlighted ? localTheme.accent : localTheme.text
+                                                            font.pixelSize: appFontSize(10)
+                                                            font.family: appFontFamily()
+                                                            verticalAlignment: Text.AlignVCenter
+                                                        }
+                                                        background: Rectangle {
+                                                            color: highlighted ? localTheme.surfaceElevated : localTheme.surface
+                                                        }
+                                                    }
+                                                    popup: Popup {
+                                                        y: devCombo.height + 2
+                                                        width: devCombo.width
+                                                        implicitHeight: Math.min(200, contentItem.implicitHeight)
+                                                        padding: 1
+                                                        contentItem: ListView {
+                                                            clip: true
+                                                            implicitHeight: contentHeight
+                                                            model: devCombo.popup.visible ? devCombo.delegateModel : null
+                                                            currentIndex: devCombo.highlightedIndex
+                                                        }
+                                                        background: Rectangle {
+                                                            color: localTheme.surface
+                                                            border.color: localTheme.borderHighlight
+                                                            border.width: 1
+                                                            radius: 2
+                                                        }
+                                                    }
                                                 }
 
                                                 Rectangle {
@@ -1960,7 +2569,7 @@ ApplicationWindow {
 
                                             RowLayout {
                                                 Layout.fillWidth: true
-                                                Text { text: "10-Band Hardware Equalizer"; color: localTheme.accent; font.bold: true; font.pixelSize: appFontSize(11); font.family: appFontFamily() }
+                                                Text { text: "Equalizer"; color: localTheme.accent; font.bold: true; font.pixelSize: appFontSize(11); font.family: appFontFamily() }
                                                 Item { Layout.fillWidth: true }
                                                 Rectangle {
                                                     Layout.preferredHeight: 20
@@ -1978,7 +2587,7 @@ ApplicationWindow {
                                                 }
                                             }
 
-                                            // Presets
+                                            // Built-in Presets
                                             RowLayout {
                                                 spacing: 6
                                                 Text { text: "Presets:"; color: localTheme.textMuted; font.pixelSize: appFontSize(10); font.family: appFontFamily() }
@@ -1994,6 +2603,178 @@ ApplicationWindow {
                                                         border.width: 1
                                                         Text { id: pTxt; anchors.centerIn: parent; text: modelData; color: localBackend.activeEqPreset === index ? localTheme.background : localTheme.text; font.pixelSize: appFontSize(9); font.family: appFontFamily() }
                                                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: localBackend.setActiveEqPreset(index) }
+                                                    }
+                                                }
+                                            }
+
+                                            // Custom Presets Rack
+                                            RowLayout {
+                                                spacing: 6
+                                                Layout.fillWidth: true
+                                                Text { text: "Custom:"; color: localTheme.textMuted; font.pixelSize: appFontSize(10); font.family: appFontFamily() }
+
+                                                Flow {
+                                                    Layout.fillWidth: true
+                                                    spacing: 6
+
+                                                    Repeater {
+                                                        model: localBackend.customEqPresets
+                                                        Rectangle {
+                                                            height: 20
+                                                            width: cEqRow.implicitWidth + 12
+                                                            radius: 2
+                                                            color: localTheme.surface
+                                                            border.color: localTheme.accent
+                                                            border.width: 1
+
+                                                            RowLayout {
+                                                                id: cEqRow
+                                                                anchors.centerIn: parent
+                                                                spacing: 5
+
+                                                                Text {
+                                                                    text: modelData.name || "Custom"
+                                                                    color: localTheme.text
+                                                                    font.pixelSize: appFontSize(9)
+                                                                    font.family: appFontFamily()
+                                                                }
+
+                                                                Text {
+                                                                    text: "×"
+                                                                    color: localTheme.statusError
+                                                                    font.bold: true
+                                                                    font.pixelSize: appFontSize(10)
+                                                                    MouseArea {
+                                                                        anchors.fill: parent
+                                                                        cursorShape: Qt.PointingHandCursor
+                                                                        onClicked: localBackend.deleteCustomPreset(index)
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            MouseArea {
+                                                                anchors.fill: parent
+                                                                cursorShape: Qt.PointingHandCursor
+                                                                onClicked: localBackend.applyCustomPreset(index)
+                                                            }
+                                                        }
+                                                    }
+
+                                                    // "+ Save Preset" button
+                                                    Rectangle {
+                                                        height: 20
+                                                        width: saveBtnTxt.implicitWidth + 12
+                                                        radius: 2
+                                                        color: saveEqPrompt.visible ? localTheme.accent : localTheme.surfaceElevated
+                                                        border.color: localTheme.accent
+                                                        border.width: 1
+
+                                                        Text {
+                                                            id: saveBtnTxt
+                                                            anchors.centerIn: parent
+                                                            text: "+ Save Preset"
+                                                            color: saveEqPrompt.visible ? localTheme.background : localTheme.accent
+                                                            font.bold: true
+                                                            font.pixelSize: appFontSize(9)
+                                                            font.family: appFontFamily()
+                                                        }
+
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            cursorShape: Qt.PointingHandCursor
+                                                            onClicked: {
+                                                                saveEqPrompt.visible = !saveEqPrompt.visible;
+                                                                if (saveEqPrompt.visible) customEqInput.forceActiveFocus();
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Inline input for saving custom preset
+                                            RowLayout {
+                                                id: saveEqPrompt
+                                                visible: false
+                                                spacing: 8
+                                                Layout.fillWidth: true
+
+                                                Text { text: "Preset Name:"; color: localTheme.text; font.pixelSize: appFontSize(10); font.family: appFontFamily() }
+
+                                                Rectangle {
+                                                    Layout.preferredWidth: 180
+                                                    Layout.preferredHeight: 22
+                                                    color: localTheme.surface
+                                                    border.color: localTheme.accent
+                                                    border.width: 1
+                                                    radius: 2
+
+                                                    TextInput {
+                                                        id: customEqInput
+                                                        anchors.fill: parent
+                                                        anchors.margins: 4
+                                                        color: localTheme.text
+                                                        font.pixelSize: appFontSize(10)
+                                                        font.family: appFontFamily()
+                                                        selectByMouse: true
+                                                        Keys.onReturnPressed: saveCustomBtn.triggerSave()
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    id: saveCustomBtn
+                                                    Layout.preferredHeight: 22
+                                                    Layout.preferredWidth: 50
+                                                    color: localTheme.accent
+                                                    radius: 2
+
+                                                    function triggerSave() {
+                                                        var name = customEqInput.text.trim();
+                                                        if (name.length > 0) {
+                                                            localBackend.saveCustomPreset(name);
+                                                            customEqInput.text = "";
+                                                            saveEqPrompt.visible = false;
+                                                        }
+                                                    }
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "Save"
+                                                        color: localTheme.background
+                                                        font.bold: true
+                                                        font.pixelSize: appFontSize(9)
+                                                        font.family: appFontFamily()
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: saveCustomBtn.triggerSave()
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    Layout.preferredHeight: 22
+                                                    Layout.preferredWidth: 50
+                                                    color: localTheme.surface
+                                                    border.color: localTheme.border
+                                                    border.width: 1
+                                                    radius: 2
+
+                                                    Text {
+                                                        anchors.centerIn: parent
+                                                        text: "Cancel"
+                                                        color: localTheme.textMuted
+                                                        font.pixelSize: appFontSize(9)
+                                                        font.family: appFontFamily()
+                                                    }
+
+                                                    MouseArea {
+                                                        anchors.fill: parent
+                                                        cursorShape: Qt.PointingHandCursor
+                                                        onClicked: {
+                                                            customEqInput.text = "";
+                                                            saveEqPrompt.visible = false;
+                                                        }
                                                     }
                                                 }
                                             }

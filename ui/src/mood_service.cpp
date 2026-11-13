@@ -102,3 +102,4 @@ QVariantList MoodService::scoreTracksForMood(const QString &mood, const QVariant
 
     return result;
 }
+

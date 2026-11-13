@@ -29,3 +29,4 @@ private:
     QNetworkAccessManager *m_net = nullptr;
     QMap<class QNetworkReply*, QString> m_pendingRequests;
 };
+

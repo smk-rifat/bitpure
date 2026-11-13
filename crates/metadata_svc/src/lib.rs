@@ -29,6 +29,8 @@ pub struct ParsedTrackMetadata {
     pub sample_rate: Option<u32>,
     pub channels: Option<u8>,
     pub has_embedded_cover: bool,
+    pub cover_bytes: Option<Vec<u8>>,
+    pub lyrics: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,7 +78,29 @@ impl MetadataInspector {
         let disc_number = tag.and_then(|t| t.disk());
         let genre = tag.and_then(|t| t.genre().map(|s| s.to_string()));
 
-        let has_embedded_cover = tag.map(|t| !t.pictures().is_empty()).unwrap_or(false);
+        let (has_embedded_cover, cover_bytes) = if let Some(t) = tag {
+            if let Some(pic) = t.pictures().first() {
+                (true, Some(pic.data().to_vec()))
+            } else {
+                (false, None)
+            }
+        } else {
+            (false, None)
+        };
+
+        let lyrics = tag.and_then(|t| {
+            t.get_string(&lofty::tag::ItemKey::Lyrics)
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    t.items()
+                        .find(|item| {
+                            let k = format!("{:?}", item.key());
+                            k.to_lowercase().contains("lyric")
+                        })
+                        .and_then(|item| item.value().text().map(|s| s.to_string()))
+                })
+        });
+
         let duration_ms = properties.duration().as_millis() as u64;
 
         Ok(ParsedTrackMetadata {
@@ -92,6 +116,8 @@ impl MetadataInspector {
             sample_rate: properties.sample_rate(),
             channels: properties.channels(),
             has_embedded_cover,
+            cover_bytes,
+            lyrics,
         })
     }
 

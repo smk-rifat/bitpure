@@ -78,6 +78,7 @@ Backend::Backend(QObject *parent) : QObject(parent) {
     initMpv();
     loadCustomPresets();
     loadLikedTracks();
+    loadHistory();
     loadPlaylists();
     scanFolder(m_musicFolder);
     watchFolder(m_musicFolder);
@@ -89,6 +90,7 @@ Backend::Backend(QObject *parent) : QObject(parent) {
 Backend::~Backend() {
     persistCustomPresets();
     persistLikedTracks();
+    persistHistory();
     persistPlaylists();
     if (m_mpvSocket) {
         sendMpvCommand("{\"command\": [\"quit\"]}\n");
@@ -123,7 +125,7 @@ void Backend::initMpv() {
 
     m_pollTimer = new QTimer(this);
     connect(m_pollTimer, &QTimer::timeout, this, &Backend::pollPlayback);
-    m_pollTimer->start(200);
+    m_pollTimer->start(50);
 }
 
 void Backend::sendMpvCommand(const QString &cmd) {
@@ -161,7 +163,7 @@ void Backend::onMpvSocketReadyRead() {
         int reqId = obj.value("request_id").toInt(-1);
         if (reqId == 1 && obj.contains("data") && obj["data"].isDouble()) {
             qint64 posMs = (qint64)(obj["data"].toDouble() * 1000.0);
-            if (qAbs(m_positionMs - posMs) > 100) {
+            if (qAbs(m_positionMs - posMs) > 40) {
                 m_positionMs = posMs;
                 emit positionChanged();
                 updateCurrentLyric(posMs);
@@ -367,6 +369,8 @@ void Backend::playTrack(const QString &filePath, const QString &title, const QSt
     m_playHistory.removeAll(filePath);
     m_playHistory.append(filePath);
     if (m_playHistory.size() > 50) m_playHistory.removeFirst();
+    persistHistory();
+    emit historyChanged();
 
     // Synchronize currentTrackIndex
     QVariantList pool = m_playQueue.isEmpty() ? m_tracks : m_playQueue;
@@ -731,6 +735,55 @@ void Backend::persistLikedTracks() {
     }
 }
 
+void Backend::loadHistory() {
+    m_playHistory.clear();
+    QString path = QDir::homePath() + "/.config/bitpure/history.json";
+    QFile f(path);
+    if (f.open(QIODevice::ReadOnly)) {
+        QJsonDocument doc = QJsonDocument::fromJson(f.readAll());
+        if (doc.isArray()) {
+            for (const auto &v : doc.array()) {
+                m_playHistory.append(v.toString());
+            }
+        }
+        f.close();
+    }
+    emit historyChanged();
+}
+
+void Backend::persistHistory() {
+    QString dir = QDir::homePath() + "/.config/bitpure";
+    QDir().mkpath(dir);
+    QFile f(dir + "/history.json");
+    if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        QJsonArray arr;
+        for (const QString &p : m_playHistory) {
+            arr.append(p);
+        }
+        f.write(QJsonDocument(arr).toJson());
+        f.close();
+    }
+}
+
+void Backend::saveHistory() {
+    persistHistory();
+}
+
+QVariantList Backend::historyTracks() const {
+    QVariantList list;
+    for (int i = m_playHistory.size() - 1; i >= 0; --i) {
+        const QString &path = m_playHistory[i];
+        for (const auto &trkVal : m_tracks) {
+            QVariantMap map = trkVal.toMap();
+            if (map["file_path"].toString() == path) {
+                list.append(map);
+                break;
+            }
+        }
+    }
+    return list;
+}
+
 bool Backend::isTrackLiked(const QString &filePath) const {
     return m_likedTrackPaths.contains(filePath);
 }
@@ -966,10 +1019,48 @@ bool Backend::deleteTrackFromStorage(const QString &filePath) {
 
 void Backend::fetchLyrics(const QString &artist, const QString &title, const QString &filePath) {
     m_syncedLyrics.clear();
+    m_syncedLyricsLines.clear();
+    m_currentLyricIndex = -1;
     m_currentLyricLine = "";
     m_translatedLyricLine = "";
+    emit syncedLyricsChanged();
+    emit currentLyricIndexChanged();
     emit currentLyricLineChanged();
     emit translatedLyricLineChanged();
+
+    auto parseLrc = [this](const QString &lrcContent) -> bool {
+        m_syncedLyrics.clear();
+        m_syncedLyricsLines.clear();
+        m_currentLyricIndex = -1;
+        QStringList lines = lrcContent.split('\n');
+        static QRegularExpression re("\\[(\\d+):(\\d+(?:\\.\\d+)?)\\](.*)");
+        for (const QString &line : lines) {
+            QRegularExpressionMatch match = re.match(line.trimmed());
+            if (match.hasMatch()) {
+                qint64 min = match.captured(1).toLongLong();
+                double sec = match.captured(2).toDouble();
+                qint64 totalMs = (min * 60 * 1000) + (qint64)(sec * 1000.0);
+                QString text = match.captured(3).trimmed();
+                if (!text.isEmpty()) {
+                    m_syncedLyrics.append(qMakePair(totalMs, text));
+                    QVariantMap m;
+                    m["timeMs"] = totalMs;
+                    m["text"] = text;
+                    qint64 totalSec = totalMs / 1000;
+                    m["timeStr"] = QString("%1:%2").arg(totalSec / 60).arg(totalSec % 60, 2, 10, QChar('0'));
+                    m_syncedLyricsLines.append(m);
+                }
+            }
+        }
+        if (!m_syncedLyrics.isEmpty()) {
+            m_lyrics = lrcContent;
+            emit lyricsChanged();
+            emit syncedLyricsChanged();
+            updateCurrentLyric(m_positionMs);
+            return true;
+        }
+        return false;
+    };
 
     // 1. Check local .lrc file right next to audio file
     if (!filePath.isEmpty()) {
@@ -978,34 +1069,21 @@ void Backend::fetchLyrics(const QString &artist, const QString &title, const QSt
         if (QFile::exists(lrcPath)) {
             QFile lf(lrcPath);
             if (lf.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                QString lrcContent = QString::fromUtf8(lf.readAll());
-                m_syncedLyrics.clear();
-                QStringList lines = lrcContent.split('\n');
-                static QRegularExpression re("\\[(\\d+):(\\d+(?:\\.\\d+)?)\\](.*)");
-                for (const QString &line : lines) {
-                    QRegularExpressionMatch match = re.match(line.trimmed());
-                    if (match.hasMatch()) {
-                        qint64 min = match.captured(1).toLongLong();
-                        double sec = match.captured(2).toDouble();
-                        qint64 totalMs = (min * 60 * 1000) + (qint64)(sec * 1000.0);
-                        QString text = match.captured(3).trimmed();
-                        if (!text.isEmpty()) {
-                            m_syncedLyrics.append(qMakePair(totalMs, text));
-                        }
-                    }
-                }
-                if (!m_syncedLyrics.isEmpty()) {
-                    m_lyrics = lrcContent;
-                    emit lyricsChanged();
-                    updateCurrentLyric(m_positionMs);
-                    return;
-                }
+                if (parseLrc(QString::fromUtf8(lf.readAll()))) return;
+            }
+        }
+        // 2. Check cached lyrics extracted from embedded tag
+        QString cachedLrc = QDir::homePath() + "/.cache/bitpure/lyrics/" + fi.completeBaseName() + ".lrc";
+        if (QFile::exists(cachedLrc)) {
+            QFile lf(cachedLrc);
+            if (lf.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                if (parseLrc(QString::fromUtf8(lf.readAll()))) return;
             }
         }
     }
 
-    // 2. Query LRCLIB for synced lyrics
-    QString cleanArtist = artist.split(',').first().split('&').first().trimmed();
+    // 3. Query LRCLIB for synced lyrics
+    QString cleanArtist = artist.split(',').first().split('&').first().split('/').first().trimmed();
     QString cleanTitle = title;
     int paren = cleanTitle.indexOf('(');
     if (paren > 0) cleanTitle = cleanTitle.left(paren).trimmed();
@@ -1025,7 +1103,7 @@ void Backend::fetchLyrics(const QString &artist, const QString &title, const QSt
     request.setHeader(QNetworkRequest::UserAgentHeader, "BitPure/1.0 (https://github.com/smk-rifat/bitpure)");
 
     QNetworkReply *reply = m_netManager->get(request);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, cleanTitle]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, cleanTitle, parseLrc]() {
         reply->deleteLater();
         if (reply->error() == QNetworkReply::NoError) {
             QByteArray data = reply->readAll();
@@ -1035,25 +1113,7 @@ void Backend::fetchLyrics(const QString &artist, const QString &title, const QSt
                 QString synced = obj.value("syncedLyrics").toString();
                 QString plain = obj.value("plainLyrics").toString();
 
-                if (!synced.isEmpty()) {
-                    m_syncedLyrics.clear();
-                    QStringList lines = synced.split('\n');
-                    static QRegularExpression re("\\[(\\d+):(\\d+(?:\\.\\d+)?)\\](.*)");
-                    for (const QString &line : lines) {
-                        QRegularExpressionMatch match = re.match(line.trimmed());
-                        if (match.hasMatch()) {
-                            qint64 min = match.captured(1).toLongLong();
-                            double sec = match.captured(2).toDouble();
-                            qint64 totalMs = (min * 60 * 1000) + (qint64)(sec * 1000.0);
-                            QString text = match.captured(3).trimmed();
-                            if (!text.isEmpty()) {
-                                m_syncedLyrics.append(qMakePair(totalMs, text));
-                            }
-                        }
-                    }
-                    m_lyrics = synced;
-                    emit lyricsChanged();
-                    updateCurrentLyric(m_positionMs);
+                if (!synced.isEmpty() && parseLrc(synced)) {
                     return;
                 } else if (!plain.isEmpty()) {
                     m_lyrics = plain;
@@ -1066,7 +1126,11 @@ void Backend::fetchLyrics(const QString &artist, const QString &title, const QSt
         }
         m_lyrics = QString("No synced lyrics found for \"%1\".").arg(cleanTitle);
         m_currentLyricLine = "";
+        m_syncedLyricsLines.clear();
+        m_currentLyricIndex = -1;
         emit lyricsChanged();
+        emit syncedLyricsChanged();
+        emit currentLyricIndexChanged();
         emit currentLyricLineChanged();
     });
 }
@@ -1075,13 +1139,21 @@ void Backend::updateCurrentLyric(qint64 posMs) {
     if (m_syncedLyrics.isEmpty()) return;
 
     QString found = "";
+    int activeIdx = -1;
     for (int i = 0; i < m_syncedLyrics.size(); ++i) {
         if (m_syncedLyrics[i].first <= posMs) {
             found = m_syncedLyrics[i].second;
+            activeIdx = i;
         } else {
             break;
         }
     }
+
+    if (activeIdx != m_currentLyricIndex) {
+        m_currentLyricIndex = activeIdx;
+        emit currentLyricIndexChanged();
+    }
+
     if (found != m_currentLyricLine) {
         m_currentLyricLine = found;
         emit currentLyricLineChanged();

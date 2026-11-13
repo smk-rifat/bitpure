@@ -271,3 +271,4 @@ void SettingsManager::resetAllSettings() {
     emit lyricsTargetLangChanged();
     emit allSettingsReset();
 }
+

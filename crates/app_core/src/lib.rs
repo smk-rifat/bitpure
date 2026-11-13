@@ -177,7 +177,7 @@ pub extern "C" fn audioplayer_scan_directory(dir_path: *const c_char) -> i32 {
                     let file_size = entry.metadata().map(|m| m.len()).unwrap_or(0);
 
                     // Extract actual high-fidelity metadata using Lofty
-                    let (title, artist, album_title, year, genre, s_rate, b_depth, ch, dur) =
+                    let (title, artist, album_title, year, genre, s_rate, b_depth, ch, dur, cover_bytes, embedded_lyrics) =
                         if let Ok(meta) = MetadataInspector::parse_file(p) {
                             (
                                 meta.title,
@@ -189,6 +189,8 @@ pub extern "C" fn audioplayer_scan_directory(dir_path: *const c_char) -> i32 {
                                 meta.bit_depth.unwrap_or(24),
                                 meta.channels.unwrap_or(2),
                                 meta.duration_ms,
+                                meta.cover_bytes,
+                                meta.lyrics,
                             )
                         } else {
                             (
@@ -201,8 +203,22 @@ pub extern "C" fn audioplayer_scan_directory(dir_path: *const c_char) -> i32 {
                                 24,
                                 2,
                                 180000,
+                                None,
+                                None,
                             )
                         };
+
+                    // Cache embedded lyrics if present
+                    if let Some(ref lrc_text) = embedded_lyrics {
+                        let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+                        let lrc_dir = PathBuf::from(home_dir).join(".cache").join("bitpure").join("lyrics");
+                        let _ = std::fs::create_dir_all(&lrc_dir);
+                        let stem = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "track".to_string());
+                        let lrc_file = lrc_dir.join(format!("{}.lrc", stem));
+                        if !lrc_file.exists() {
+                            let _ = std::fs::write(&lrc_file, lrc_text);
+                        }
+                    }
 
                     // Find potential cover art in the same directory
                     let mut cover_path: Option<PathBuf> = None;
@@ -221,22 +237,55 @@ pub extern "C" fn audioplayer_scan_directory(dir_path: *const c_char) -> i32 {
                         }
                     }
 
-                    // Canonicalize album title if generic folder name or empty
+                    // If no folder art, extract embedded picture to disk cache
+                    if cover_path.is_none() {
+                        if let Some(ref bytes) = cover_bytes {
+                            let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+                            let cache_dir = PathBuf::from(home_dir).join(".cache").join("bitpure").join("covers");
+                            let _ = std::fs::create_dir_all(&cache_dir);
+                            use std::hash::Hasher;
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            hasher.write(artist.as_bytes());
+                            hasher.write(b":");
+                            hasher.write(album_title.as_bytes());
+                            let hash_val = hasher.finish();
+                            let art_file = cache_dir.join(format!("art_{:016x}.jpg", hash_val));
+                            if !art_file.exists() {
+                                let _ = std::fs::write(&art_file, bytes);
+                            }
+                            cover_path = Some(art_file);
+                        }
+                    }
+
+                    // Canonicalize album title and artist
                     let raw_album = album_title.trim();
                     let raw_album_lower = raw_album.to_lowercase();
-                    let canonical_album = if raw_album.is_empty()
+                    let raw_title_lower = title.trim().to_lowercase();
+                    let raw_artist = artist.trim();
+
+                    let primary_artist = if let Some(first) = raw_artist.split(&[',', '/', ';'][..]).next() {
+                        first.trim()
+                    } else {
+                        raw_artist
+                    };
+
+                    let is_single = raw_album_lower == raw_title_lower
+                        || raw_album_lower.contains(" - single")
+                        || raw_album_lower.ends_with(" (single)");
+
+                    let is_generic = raw_album.is_empty()
                         || raw_album_lower == "sample_music"
                         || raw_album_lower == "music_ll"
                         || raw_album_lower == "music"
                         || raw_album_lower == "unknown album"
-                        || raw_album_lower == "lossless album"
-                    {
-                        format!("{} - Singles & EPs", artist.trim())
-                    } else {
-                        raw_album.to_string()
-                    };
+                        || raw_album_lower == "unknown"
+                        || raw_album_lower == "lossless album";
 
-                    let canonical_artist = artist.trim().to_string();
+                    let (canonical_album, canonical_artist) = if is_generic || is_single {
+                        (format!("{} - Singles & EPs", primary_artist), primary_artist.to_string())
+                    } else {
+                        (raw_album.to_string(), primary_artist.to_string())
+                    };
 
                     let album_id = inst
                         .library

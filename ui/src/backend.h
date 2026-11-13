@@ -38,6 +38,8 @@ class Backend : public QObject {
     Q_PROPERTY(QVariantList eqGains READ eqGains NOTIFY eqChanged)
     Q_PROPERTY(float preamp READ preamp WRITE setPreamp NOTIFY eqChanged)
     Q_PROPERTY(QString lyrics READ lyrics NOTIFY lyricsChanged)
+    Q_PROPERTY(QVariantList syncedLyricsLines READ syncedLyricsLines NOTIFY syncedLyricsChanged)
+    Q_PROPERTY(int currentLyricIndex READ currentLyricIndex NOTIFY currentLyricIndexChanged)
     Q_PROPERTY(QString currentLyricLine READ currentLyricLine NOTIFY currentLyricLineChanged)
     Q_PROPERTY(QString translatedLyricLine READ translatedLyricLine NOTIFY translatedLyricLineChanged)
     Q_PROPERTY(bool lyricsTranslationEnabled READ lyricsTranslationEnabled WRITE setLyricsTranslationEnabled NOTIFY lyricsTranslationEnabledChanged)
@@ -54,6 +56,9 @@ class Backend : public QObject {
     // Liked tracks
     Q_PROPERTY(QStringList likedTrackPaths READ likedTrackPaths NOTIFY likedTracksChanged)
     Q_PROPERTY(QVariantList likedTracks READ likedTracks NOTIFY likedTracksChanged)
+
+    // History
+    Q_PROPERTY(QVariantList historyTracks READ historyTracks NOTIFY historyChanged)
 
     // Playlists
     Q_PROPERTY(QStringList playlistNames READ playlistNames NOTIFY playlistsChanged)
@@ -97,6 +102,8 @@ public:
     void setActiveDeviceId(const QString &id);
 
     QString lyrics() const { return m_lyrics; }
+    QVariantList syncedLyricsLines() const { return m_syncedLyricsLines; }
+    int currentLyricIndex() const { return m_currentLyricIndex; }
     QString currentLyricLine() const { return m_currentLyricLine; }
     QString translatedLyricLine() const { return m_translatedLyricLine; }
     bool lyricsTranslationEnabled() const { return m_lyricsTranslationEnabled; }
@@ -122,6 +129,8 @@ public:
 
     QStringList likedTrackPaths() const { return m_likedTrackPaths; }
     QVariantList likedTracks() const;
+    QVariantList historyTracks() const;
+    Q_INVOKABLE void saveHistory();
 
     QStringList playlistNames() const { return m_playlists.keys(); }
     QString activePlaylistName() const { return m_activePlaylistName; }
@@ -203,6 +212,8 @@ signals:
     void eqChanged();
     void customEqPresetsChanged();
     void lyricsChanged();
+    void syncedLyricsChanged();
+    void currentLyricIndexChanged();
     void currentLyricLineChanged();
     void translatedLyricLineChanged();
     void lyricsTranslationEnabledChanged();
@@ -213,6 +224,7 @@ signals:
     void currentTrackIndexChanged();
     void playQueueChanged();
     void likedTracksChanged();
+    void historyChanged();
     void playlistsChanged();
     void activePlaylistNameChanged();
     void activePlaylistTracksChanged();
@@ -241,6 +253,8 @@ private:
     QVariantList m_customEqPresets;
 
     QString m_lyrics = "No lyrics loaded.";
+    QVariantList m_syncedLyricsLines;
+    int m_currentLyricIndex = -1;
     QString m_currentLyricLine = "";
     QString m_translatedLyricLine = "";
     bool m_lyricsTranslationEnabled = false;
@@ -253,6 +267,9 @@ private:
 
     void loadLikedTracks();
     void persistLikedTracks();
+
+    void loadHistory();
+    void persistHistory();
 
     void loadPlaylists();
     void persistPlaylists();

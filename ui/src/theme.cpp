@@ -96,6 +96,22 @@ void Theme::setFamilyAndVariant(const QString &fam, const QString &var) {
     }
 }
 
+void Theme::cycleFamily() {
+    QStringList fams = availableFamilies();
+    int idx = fams.indexOf(m_family);
+    if (idx < 0) idx = 0;
+    else idx = (idx + 1) % fams.size();
+    setFamily(fams[idx]);
+}
+
+void Theme::cycleVariant() {
+    QStringList vars = availableVariants();
+    int idx = vars.indexOf(m_variant);
+    if (idx < 0) idx = 0;
+    else idx = (idx + 1) % vars.size();
+    setVariant(vars[idx]);
+}
+
 void Theme::setTheme(const QString &name) {
     // Check if name is a variant or family
     for (const QString &fam : availableFamilies()) {

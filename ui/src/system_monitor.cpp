@@ -105,3 +105,4 @@ void SystemMonitor::updateStorageSize() {
 QString SystemMonitor::formattedStatus() const {
     return QString("%1 · %2 · %3").arg(m_cpuUsage, m_ramUsage, m_storageFootprint);
 }
+

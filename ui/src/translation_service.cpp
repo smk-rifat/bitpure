@@ -126,3 +126,4 @@ void TranslationService::onReplyFinished(QNetworkReply *reply) {
         }
     }
 }
+

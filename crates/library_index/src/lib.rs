@@ -134,12 +134,13 @@ impl SqliteLibrary {
         let clean_artist = artist.trim();
 
         let mut stmt = self.conn.prepare(
-            "SELECT id, track_count, cover_art_path FROM albums WHERE LOWER(TRIM(title)) = LOWER(?1) AND LOWER(TRIM(album_artist)) = LOWER(?2)"
+            "SELECT id, track_count, cover_art_path, album_artist FROM albums WHERE LOWER(TRIM(title)) = LOWER(?1)"
         )?;
-        let mut rows = stmt.query(params![clean_title, clean_artist])?;
+        let mut rows = stmt.query(params![clean_title])?;
         if let Some(row) = rows.next()? {
             let id_str: String = row.get(0)?;
             let existing_cover: Option<String> = row.get(2)?;
+            let existing_artist: String = row.get(3)?;
             let id = AlbumId(Uuid::parse_str(&id_str).unwrap_or_else(|_| Uuid::new_v4()));
 
             // Update cover if missing
@@ -147,6 +148,16 @@ impl SqliteLibrary {
                 let cov_str = cover_art_path.as_ref().map(|p| p.to_string_lossy().to_string());
                 let _ = self.conn.execute("UPDATE albums SET cover_art_path = ?1 WHERE id = ?2", params![cov_str, id_str]);
             }
+
+            // If artists differ across tracks in the same album (soundtrack/compilation), harmonize
+            if !existing_artist.eq_ignore_ascii_case(clean_artist) {
+                let ea_lower = existing_artist.to_lowercase();
+                let ca_lower = clean_artist.to_lowercase();
+                if !ea_lower.contains(&ca_lower) && !ca_lower.contains(&ea_lower) && ea_lower != "various artists" {
+                    let _ = self.conn.execute("UPDATE albums SET album_artist = 'Various Artists' WHERE id = ?1", params![id_str]);
+                }
+            }
+
             return Ok(id);
         }
 

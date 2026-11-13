@@ -126,3 +126,4 @@ private:
     bool m_lyricsTranslate = false;
     QString m_lyricsTargetLang = "en";
 };
+

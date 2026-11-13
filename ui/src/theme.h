@@ -48,20 +48,22 @@ class Theme : public QObject {
 public:
     explicit Theme(QObject *parent = nullptr);
 
-    QString family() const { return m_family; }
-    void setFamily(const QString &f);
+    Q_INVOKABLE QString family() const { return m_family; }
+    Q_INVOKABLE void setFamily(const QString &f);
 
-    QString variant() const { return m_variant; }
-    void setVariant(const QString &v);
+    Q_INVOKABLE QString variant() const { return m_variant; }
+    Q_INVOKABLE void setVariant(const QString &v);
 
-    QString currentTheme() const { return m_variant; }
-    void setTheme(const QString &name);
+    Q_INVOKABLE QString currentTheme() const { return m_variant; }
+    Q_INVOKABLE void setTheme(const QString &name);
 
     Q_INVOKABLE void setFamilyAndVariant(const QString &fam, const QString &var);
     Q_INVOKABLE QStringList variantsForFamily(const QString &fam) const;
+    Q_INVOKABLE void cycleFamily();
+    Q_INVOKABLE void cycleVariant();
 
-    QStringList availableFamilies() const;
-    QStringList availableVariants() const;
+    Q_INVOKABLE QStringList availableFamilies() const;
+    Q_INVOKABLE QStringList availableVariants() const;
 
     // Tokens
     QString background() const { return m_background; }

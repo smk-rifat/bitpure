@@ -19,3 +19,4 @@ public:
 
     Q_INVOKABLE QVariantList scoreTracksForMood(const QString &mood, const QVariantList &allTracks, const QStringList &likedPaths);
 };
+
